@@ -12,11 +12,11 @@
       "secure": true,
       "session": true,
       "storeId": "0",
-      "value": ""
+      "value": "0000"
     },
     {
       "domain": ".siriusxm.com",
-      "expirationDate": 0,
+      "expirationDate": 1783260902.65567,
       "hostOnly": false,
       "httpOnly": false,
       "name": "SSO_TOKEN",
@@ -25,7 +25,7 @@
       "secure": true,
       "session": false,
       "storeId": "0",
-      "value": ""
+      "value": "0000"
     },
     {
       "domain": "www.siriusxm.com",
@@ -38,7 +38,7 @@
       "secure": false,
       "session": true,
       "storeId": "0",
-      "value": ""
+      "value": "0000"
     },
     {
       "domain": ".siriusxm.com",
@@ -51,7 +51,7 @@
       "secure": true,
       "session": true,
       "storeId": "0",
-      "value": ""
+      "value": "0000"
     },
     {
       "domain": ".siriusxm.com",
@@ -64,7 +64,7 @@
       "secure": true,
       "session": true,
       "storeId": "0",
-      "value": ""
+      "value": "0000"
     },
     {
       "domain": ".siriusxm.com",
@@ -77,11 +77,11 @@
       "secure": false,
       "session": true,
       "storeId": "0",
-      "value": ""
+      "value": "0000"
     },
     {
       "domain": ".siriusxm.com",
-      "expirationDate": 0,
+      "expirationDate": 1756908968,
       "hostOnly": false,
       "httpOnly": false,
       "name": "AUTH_TOKEN",
@@ -90,7 +90,7 @@
       "secure": false,
       "session": false,
       "storeId": "0",
-      "value": ""
+      "value": "0000"
     }
   ]
 }

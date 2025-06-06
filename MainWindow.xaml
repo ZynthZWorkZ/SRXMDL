@@ -5,18 +5,18 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SRXMDL"
         mc:Ignorable="d"
-        Title="SiriusXM Stream Monitor" Height="800" Width="1500"
+        Title="SiriusXM Monitor" Height="480" Width="720"
         Background="#0A0B1E"
-        ResizeMode="CanResize">
+        ResizeMode="CanResize"
+        MinHeight="420"
+        MinWidth="680">
     
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         
-        <!-- Modern Color Palette -->
+        <!-- Compact Color Palette -->
         <SolidColorBrush x:Key="PrimaryBackground" Color="#0A0B1E"/>
         <SolidColorBrush x:Key="CardBackground" Color="#1A1B3A"/>
-        <SolidColorBrush x:Key="CardHover" Color="#252649"/>
-        <SolidColorBrush x:Key="GlassBackground" Color="#2A2B5A"/>
         <SolidColorBrush x:Key="AccentPurple" Color="#6366F1"/>
         <SolidColorBrush x:Key="AccentBlue" Color="#00D4FF"/>
         <SolidColorBrush x:Key="AccentGreen" Color="#10B981"/>
@@ -25,64 +25,46 @@
         <SolidColorBrush x:Key="TextSecondary" Color="#A1A1AA"/>
         <SolidColorBrush x:Key="TextMuted" Color="#71717A"/>
         
-        <!-- Glassmorphism Card Style -->
-        <Style x:Key="GlassCard" TargetType="Border">
+        <!-- Compact Glass Card -->
+        <Style x:Key="CompactCard" TargetType="Border">
             <Setter Property="Background">
                 <Setter.Value>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1" Opacity="0.8">
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1" Opacity="0.9">
                         <GradientStop Color="#1A1B3A" Offset="0"/>
                         <GradientStop Color="#2A2B5A" Offset="1"/>
                     </LinearGradientBrush>
                 </Setter.Value>
             </Setter>
-            <Setter Property="CornerRadius" Value="16"/>
+            <Setter Property="CornerRadius" Value="8"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush">
-                <Setter.Value>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1" Opacity="0.3">
-                        <GradientStop Color="#6366F1" Offset="0"/>
-                        <GradientStop Color="#00D4FF" Offset="1"/>
-                    </LinearGradientBrush>
-                </Setter.Value>
-            </Setter>
+            <Setter Property="BorderBrush" Value="#333355"/>
             <Setter Property="Effect">
                 <Setter.Value>
-                    <DropShadowEffect Color="#000000" Opacity="0.4" BlurRadius="20" ShadowDepth="0"/>
+                    <DropShadowEffect Color="#000000" Opacity="0.3" BlurRadius="8" ShadowDepth="0"/>
                 </Setter.Value>
             </Setter>
         </Style>
         
-        <!-- Modern Primary Button -->
-        <Style x:Key="PrimaryButton" TargetType="Button">
+        <!-- Compact Primary Button -->
+        <Style x:Key="CompactPrimaryButton" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource AccentPurple}"/>
             <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Padding" Value="32,16"/>
+            <Setter Property="Padding" Value="16,8"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border Background="{TemplateBinding Background}"
-                                CornerRadius="12"
+                                CornerRadius="6"
                                 Padding="{TemplateBinding Padding}">
-                            <Border.Effect>
-                                <DropShadowEffect Color="{Binding Background.Color, RelativeSource={RelativeSource TemplatedParent}}" 
-                                                Opacity="0.4" BlurRadius="12" ShadowDepth="0"/>
-                            </Border.Effect>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background">
-                                    <Setter.Value>
-                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                            <GradientStop Color="#7C3AED" Offset="0"/>
-                                            <GradientStop Color="#6366F1" Offset="1"/>
-                                        </LinearGradientBrush>
-                                    </Setter.Value>
-                                </Setter>
+                                <Setter Property="Background" Value="#7C3AED"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Background" Value="#374151"/>
@@ -93,46 +75,15 @@
                 </Setter.Value>
             </Setter>
         </Style>
-        
-        <!-- Secondary Button -->
-        <Style x:Key="SecondaryButton" TargetType="Button">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{StaticResource AccentBlue}"/>
-            <Setter Property="Padding" Value="24,12"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="{StaticResource AccentBlue}"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="FontWeight" Value="Medium"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="8"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="{StaticResource AccentBlue}"/>
-                                <Setter Property="Foreground" Value="White"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
 
-        <!-- Action Button -->
-        <Style x:Key="ActionButton" TargetType="Button">
+        <!-- Compact Action Button -->
+        <Style x:Key="CompactActionButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
-            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="Padding" Value="8,4"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="BorderBrush" Value="#374151"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontSize" Value="10"/>
             <Setter Property="FontWeight" Value="Medium"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
@@ -141,7 +92,7 @@
                         <Border Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6"
+                                CornerRadius="4"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
@@ -149,7 +100,6 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Background" Value="#374151"/>
                                 <Setter Property="Foreground" Value="White"/>
-                                <Setter Property="BorderBrush" Value="{StaticResource AccentPurple}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -157,25 +107,25 @@
             </Setter>
         </Style>
 
-        <!-- Modern ListView -->
-        <Style x:Key="ModernListView" TargetType="ListView">
+        <!-- Compact ListView -->
+        <Style x:Key="CompactListView" TargetType="ListView">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
         </Style>
 
-        <!-- Modern ListViewItem -->
-        <Style x:Key="ModernListViewItem" TargetType="ListViewItem">
+        <!-- Compact ListViewItem -->
+        <Style x:Key="CompactListViewItem" TargetType="ListViewItem">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Padding" Value="24,16"/>
-            <Setter Property="Margin" Value="0,0,0,2"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Margin" Value="0,0,0,1"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListViewItem">
                         <Border Background="{TemplateBinding Background}"
-                                CornerRadius="8"
+                                CornerRadius="4"
                                 Padding="{TemplateBinding Padding}">
                             <GridViewRowPresenter VerticalAlignment="Center"/>
                         </Border>
@@ -192,13 +142,13 @@
             </Setter>
         </Style>
 
-        <!-- Modern GridViewColumnHeader -->
-        <Style x:Key="ModernGridViewColumnHeader" TargetType="GridViewColumnHeader">
+        <!-- Compact GridViewColumnHeader -->
+        <Style x:Key="CompactGridViewColumnHeader" TargetType="GridViewColumnHeader">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
-            <Setter Property="Padding" Value="24,16"/>
+            <Setter Property="Padding" Value="8,8"/>
             <Setter Property="FontWeight" Value="Medium"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontSize" Value="10"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="Template">
@@ -214,20 +164,20 @@
             </Setter>
         </Style>
 
-        <!-- Status Indicator Style -->
-        <Style x:Key="StatusIndicator" TargetType="Ellipse">
-            <Setter Property="Width" Value="12"/>
-            <Setter Property="Height" Value="12"/>
+        <!-- Compact Status Indicator -->
+        <Style x:Key="CompactStatusIndicator" TargetType="Ellipse">
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="Height" Value="8"/>
             <Setter Property="Fill" Value="{StaticResource AccentGreen}"/>
             <Setter Property="Effect">
                 <Setter.Value>
-                    <DropShadowEffect Color="#10B981" Opacity="0.6" BlurRadius="8" ShadowDepth="0"/>
+                    <DropShadowEffect Color="#10B981" Opacity="0.6" BlurRadius="4" ShadowDepth="0"/>
                 </Setter.Value>
             </Setter>
         </Style>
     </Window.Resources>
 
-    <Grid Margin="32">
+    <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -235,8 +185,8 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header Dashboard -->
-        <Border Grid.Row="0" Style="{StaticResource GlassCard}" Padding="32,24" Margin="0,0,0,24">
+        <!-- Compact Header -->
+        <Border Grid.Row="0" Style="{StaticResource CompactCard}" Padding="16,12" Margin="0,0,0,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -246,37 +196,37 @@
                 
                 <!-- Title Section -->
                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                        <Border Width="6" Height="6" Background="{StaticResource AccentBlue}" CornerRadius="3" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="SiriusXM Stream Monitor" 
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                        <Border Width="4" Height="4" Background="{StaticResource AccentBlue}" CornerRadius="2" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="SiriusXM Monitor" 
                                    Foreground="{StaticResource TextPrimary}" 
-                                   FontSize="24" 
+                                   FontSize="16" 
                                    FontWeight="Bold"/>
                     </StackPanel>
-                    <TextBlock Text="Real-time stream monitoring and analysis" 
+                    <TextBlock Text="Stream monitoring" 
                                Foreground="{StaticResource TextSecondary}"
-                               FontSize="14"/>
+                               FontSize="11"/>
                 </StackPanel>
                 
-                <!-- Stats Cards -->
-                <Border Grid.Column="1" Background="#1A6366F1" CornerRadius="12" Padding="20,16" Margin="0,0,16,0">
+                <!-- Compact Stats -->
+                <Border Grid.Column="1" Background="#1A6366F1" CornerRadius="6" Padding="12,6" Margin="0,0,8,0">
                     <StackPanel>
-                        <TextBlock Text="Active Streams" Foreground="{StaticResource TextSecondary}" FontSize="12" Margin="0,0,0,4"/>
-                        <TextBlock x:Name="ActiveStreamsCount" Text="0" Foreground="{StaticResource TextPrimary}" FontSize="20" FontWeight="Bold"/>
+                        <TextBlock Text="Active" Foreground="{StaticResource TextSecondary}" FontSize="9"/>
+                        <TextBlock x:Name="ActiveStreamsCount" Text="0" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="Bold"/>
                     </StackPanel>
                 </Border>
                 
-                <Border Grid.Column="2" Background="#1A10B981" CornerRadius="12" Padding="20,16">
+                <Border Grid.Column="2" Background="#1A10B981" CornerRadius="6" Padding="12,6">
                     <StackPanel>
-                        <TextBlock Text="Total Captured" Foreground="{StaticResource TextSecondary}" FontSize="12" Margin="0,0,0,4"/>
-                        <TextBlock x:Name="TotalCapturedCount" Text="0" Foreground="{StaticResource TextPrimary}" FontSize="20" FontWeight="Bold"/>
+                        <TextBlock Text="Total" Foreground="{StaticResource TextSecondary}" FontSize="9"/>
+                        <TextBlock x:Name="TotalCapturedCount" Text="0" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="Bold"/>
                     </StackPanel>
                 </Border>
             </Grid>
         </Border>
 
-        <!-- Control Panel -->
-        <Border Grid.Row="1" Style="{StaticResource GlassCard}" Padding="32,28" Margin="0,0,0,24">
+        <!-- Compact Control Panel -->
+        <Border Grid.Row="1" Style="{StaticResource CompactCard}" Padding="16,12" Margin="0,0,0,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -285,108 +235,114 @@
                 
                 <StackPanel Grid.Column="0" Orientation="Horizontal">
                     <Button x:Name="StartButton" 
-                            Content="▶  Start Monitoring" 
+                            Content="▶ Start" 
                             Click="StartButton_Click" 
-                            Style="{StaticResource PrimaryButton}"
-                            Margin="0,0,16,0"/>
+                            Style="{StaticResource CompactPrimaryButton}"
+                            Margin="0,0,8,0"/>
                     <Button x:Name="StopButton" 
-                            Content="⏹  Stop Monitoring" 
+                            Content="⏹ Stop" 
                             Click="StopButton_Click" 
-                            Style="{StaticResource PrimaryButton}"
+                            Style="{StaticResource CompactPrimaryButton}"
                             Background="{StaticResource AccentRed}"
-                            IsEnabled="False"/>
+                            IsEnabled="False"
+                            Margin="0,0,8,0"/>
+                    <Button x:Name="ResetCookiesButton"
+                            Content="Reset Cookies"
+                            Click="ResetCookiesButton_Click"
+                            Style="{StaticResource CompactActionButton}"/>
                 </StackPanel>
                 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse Style="{StaticResource StatusIndicator}" Margin="0,0,8,0"/>
+                    <Ellipse Style="{StaticResource CompactStatusIndicator}" Margin="0,0,6,0"/>
                     <TextBlock x:Name="ConnectionStatus" 
-                               Text="Ready to monitor" 
+                               Text="Ready" 
                                Foreground="{StaticResource TextSecondary}"
-                               FontSize="14"
+                               FontSize="11"
                                VerticalAlignment="Center"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- Stream Data Table -->
-        <Border Grid.Row="2" Style="{StaticResource GlassCard}" Padding="0" Margin="0,0,0,24">
+        <!-- Compact Stream Data Table -->
+        <Border Grid.Row="2" Style="{StaticResource CompactCard}" Padding="0" Margin="0,0,0,8">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 
-                <!-- Table Header -->
-                <Border Grid.Row="0" Background="#1A1B3A" CornerRadius="16,16,0,0" Padding="24,20">
+                <!-- Compact Table Header -->
+                <Border Grid.Row="0" Background="#1A1B3A" CornerRadius="8,8,0,0" Padding="12,8">
                     <TextBlock Text="Stream Activity" 
                                Foreground="{StaticResource TextPrimary}" 
-                               FontSize="18" 
+                               FontSize="13" 
                                FontWeight="SemiBold"/>
                 </Border>
                 
-                <!-- Data Grid -->
+                <!-- Compact Data Grid -->
                 <ListView Grid.Row="1" 
                           x:Name="StreamListView" 
-                          Style="{StaticResource ModernListView}"
-                          ItemContainerStyle="{StaticResource ModernListViewItem}"
-                          Padding="0,8">
+                          Style="{StaticResource CompactListView}"
+                          ItemContainerStyle="{StaticResource CompactListViewItem}"
+                          Padding="4">
                     <ListView.View>
-                        <GridView ColumnHeaderContainerStyle="{StaticResource ModernGridViewColumnHeader}">
-                            <GridViewColumn Header="TIMESTAMP" Width="200">
+                        <GridView ColumnHeaderContainerStyle="{StaticResource CompactGridViewColumnHeader}">
+                            <GridViewColumn Header="TIME" Width="90">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding Timestamp}" 
+                                        <TextBlock Text="{Binding Timestamp, StringFormat=HH:mm:ss}" 
                                                    Foreground="{StaticResource TextPrimary}"
-                                                   FontFamily="JetBrains Mono, Consolas"
-                                                   FontSize="13"
+                                                   FontFamily="Consolas"
+                                                   FontSize="10"
                                                    FontWeight="Medium"/>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="TYPE" Width="120">
+                            <GridViewColumn Header="TYPE" Width="60">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <Border Background="{StaticResource AccentPurple}" 
-                                                CornerRadius="16" 
-                                                Padding="12,6">
+                                                CornerRadius="8" 
+                                                Padding="6,2">
                                             <TextBlock Text="{Binding StreamType}" 
                                                        Foreground="White"
-                                                       FontSize="11"
+                                                       FontSize="8"
                                                        FontWeight="SemiBold"
                                                        HorizontalAlignment="Center"/>
                                         </Border>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="STREAM URL" Width="700">
+                            <GridViewColumn Header="URL" Width="320">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding Url}" 
                                                    Foreground="{StaticResource TextSecondary}"
-                                                   FontFamily="JetBrains Mono, Consolas"
-                                                   FontSize="12"
-                                                   TextTrimming="CharacterEllipsis"/>
+                                                   FontFamily="Consolas"
+                                                   FontSize="9"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding Url}"/>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="ACTIONS" Width="300">
+                            <GridViewColumn Header="ACTIONS" Width="180">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
-                                            <Button Content="📋 Copy" 
+                                            <Button Content="Copy" 
                                                     Click="CopyButton_Click" 
-                                                    Style="{StaticResource ActionButton}"
-                                                    Margin="0,0,8,0"/>
-                                            <Button Content="▶ Play" 
+                                                    Style="{StaticResource CompactActionButton}"
+                                                    Margin="0,0,4,0"/>
+                                            <Button Content="Play" 
                                                     Click="PlayButton_Click" 
-                                                    Style="{StaticResource ActionButton}"
+                                                    Style="{StaticResource CompactActionButton}"
                                                     Background="{StaticResource AccentGreen}"
                                                     BorderBrush="{StaticResource AccentGreen}"
                                                     Foreground="White"
-                                                    Margin="0,0,8,0"
+                                                    Margin="0,0,4,0"
                                                     Visibility="{Binding CanPlay, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                            <Button Content="📥 Download" 
-                                                    Style="{StaticResource ActionButton}"
+                                            <Button Content="Save" 
+                                                    Style="{StaticResource CompactActionButton}"
                                                     Background="{StaticResource AccentBlue}"
                                                     BorderBrush="{StaticResource AccentBlue}"
                                                     Foreground="White"
@@ -401,39 +357,32 @@
             </Grid>
         </Border>
 
-        <!-- Status Footer -->
-        <Border Grid.Row="3" Style="{StaticResource GlassCard}" Padding="32,20">
+        <!-- Compact Status Footer -->
+        <Border Grid.Row="3" Style="{StaticResource CompactCard}" Padding="16,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <Border Background="#1A10B981" CornerRadius="8" Padding="12,6" Margin="0,0,16,0">
-                        <TextBlock Text="System Ready" 
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Background="#1A10B981" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
+                        <TextBlock Text="Ready" 
                                    Foreground="White"
-                                   FontSize="12"
+                                   FontSize="9"
                                    FontWeight="Medium"/>
                     </Border>
                     <TextBlock x:Name="StatusText" 
-                               Text="Monitoring service ready to capture streams" 
+                               Text="Monitoring service ready" 
                                Foreground="{StaticResource TextSecondary}"
-                               FontSize="14"
+                               FontSize="10"
                                VerticalAlignment="Center"/>
                 </StackPanel>
                 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="made by " 
-                               Foreground="{StaticResource TextMuted}"
-                               FontSize="12"
-                               VerticalAlignment="Center"/>
-                    <TextBlock Text="Zano" 
-                               Foreground="{StaticResource AccentBlue}"
-                               FontSize="12"
-                               FontWeight="Bold"
-                               VerticalAlignment="Center"/>
-                </StackPanel>
+                <TextBlock Text="by Zano" 
+                           Foreground="{StaticResource TextMuted}"
+                           FontSize="9"
+                           VerticalAlignment="Center"/>
             </Grid>
         </Border>
     </Grid>

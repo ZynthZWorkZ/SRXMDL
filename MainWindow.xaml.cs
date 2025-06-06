@@ -1,4 +1,4 @@
-﻿using OpenQA.Selenium;
+using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -99,6 +99,25 @@ public partial class MainWindow : Window
             // First navigate to the domain to set cookies
             await NavigateWithRetry(driver, "https://www.siriusxm.com");
 
+            // Check for welcome page redirect
+            if (driver.Url == "https://www.siriusxm.com/player/welcome")
+            {
+                await StopMonitoring();
+                MessageBox.Show(
+                    "⚠️ Cookie Update Required ⚠️\n\n" +
+                    "Please follow these steps:\n" +
+                    "1. Visit SiriusXM website\n" +
+                    "2. Log in to your account\n" +
+                    "3. Export your cookies\n" +
+                    "4. Save them to /cookies as temp.json\n\n" +
+                    "This will automatically update your cookie values.",
+                    "Cookie Update Required",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
+
             // Read cookies from file
             var cookieJson = await File.ReadAllTextAsync("cookies/www.siriusxm.com.json");
             var cookieData = JsonSerializer.Deserialize<CookieData>(cookieJson);
@@ -126,6 +145,25 @@ public partial class MainWindow : Window
 
             // Navigate to the player home page
             await NavigateWithRetry(driver, "https://www.siriusxm.com/player/home");
+
+            // Check again for welcome page redirect after navigation
+            if (driver.Url == "https://www.siriusxm.com/player/welcome")
+            {
+                await StopMonitoring();
+                MessageBox.Show(
+                    "⚠️ Cookie Update Required ⚠️\n\n" +
+                    "Please follow these steps:\n" +
+                    "1. Visit SiriusXM website\n" +
+                    "2. Log in to your account\n" +
+                    "3. Export your cookies\n" +
+                    "4. Save them to /cookies as temp.json\n\n" +
+                    "This will automatically update your cookie values.",
+                    "Cookie Update Required",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
 
             StatusText.Text = "Monitoring active";
             Log.Information("Browser is now open and monitoring for MP4 and streaming requests.");
@@ -176,6 +214,38 @@ public partial class MainWindow : Window
         {
             try
             {
+                // Check if we've been redirected to the welcome page
+                if (driver?.Url != null && driver.Url.Contains("siriusxm.com/player/welcome"))
+                {
+                    Log.Warning("Detected welcome page redirect");
+                    await StopMonitoring();
+                    
+                    // Ensure we're on the UI thread and show the message
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            MessageBox.Show(
+                                "⚠️ Cookie Update Required ⚠️\n\n" +
+                                "Please follow these steps:\n" +
+                                "1. Visit SiriusXM website\n" +
+                                "2. Log in to your account\n" +
+                                "3. Export your cookies\n" +
+                                "4. Save them to /cookies as temp.json\n\n" +
+                                "This will automatically update your cookie values.",
+                                "Cookie Update Required",
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Warning
+                            );
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error(ex, "Error showing message box");
+                        }
+                    });
+                    return;
+                }
+
                 var logs = driver?.Manage().Logs.GetLog(LogType.Performance);
                 if (logs != null)
                 {
@@ -321,6 +391,42 @@ public partial class MainWindow : Window
             var downloadWindow = new DownloadWindow(item.Url);
             downloadWindow.Owner = this;
             downloadWindow.ShowDialog();
+        }
+    }
+
+    private async void ResetCookiesButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var cookiePath = "cookies/www.siriusxm.com.json";
+            if (File.Exists(cookiePath))
+            {
+                var cookieJson = await File.ReadAllTextAsync(cookiePath);
+                var cookieData = JsonSerializer.Deserialize<CookieData>(cookieJson);
+
+                // Reset all cookie values to "0000"
+                foreach (var cookie in cookieData.Cookies)
+                {
+                    cookie.Value = "0000";
+                }
+
+                // Save the updated cookies
+                var updatedJson = JsonSerializer.Serialize(cookieData, new JsonSerializerOptions { WriteIndented = true });
+                await File.WriteAllTextAsync(cookiePath, updatedJson);
+
+                StatusText.Text = "Cookies have been reset successfully";
+                Log.Information("Cookies have been reset successfully");
+            }
+            else
+            {
+                StatusText.Text = "Cookie file not found";
+                Log.Warning("Cookie file not found at {Path}", cookiePath);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Error resetting cookies";
+            Log.Error(ex, "Error resetting cookies");
         }
     }
 
