@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SRXMDL")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+13b95807de37362853b2c395d72fd0c0316da8ce")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+42fc045568dc2bf63307dae4c77c5c231db05d29")]
 [assembly: System.Reflection.AssemblyProductAttribute("SRXMDL")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SRXMDL")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

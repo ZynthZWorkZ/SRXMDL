@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SRXMDL"
         mc:Ignorable="d"
-        Title="SiriusXM Monitor" Height="480" Width="720"
+        Title="SiriusXM Monitor" Height="720" Width="720"
         Background="#0A0B1E"
         ResizeMode="CanResize"
         MinHeight="420"
@@ -13,6 +13,14 @@
     
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        
+        <!-- Status Indicator Animation -->
+        <Storyboard x:Key="BlinkAnimation" RepeatBehavior="Forever">
+            <DoubleAnimation
+                Storyboard.TargetProperty="Opacity"
+                From="1" To="0.3" Duration="0:0:1"
+                AutoReverse="True"/>
+        </Storyboard>
         
         <!-- Compact Color Palette -->
         <SolidColorBrush x:Key="PrimaryBackground" Color="#0A0B1E"/>
@@ -182,6 +190,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
@@ -190,7 +199,6 @@
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 
@@ -208,15 +216,8 @@
                                FontSize="11"/>
                 </StackPanel>
                 
-                <!-- Compact Stats -->
-                <Border Grid.Column="1" Background="#1A6366F1" CornerRadius="6" Padding="12,6" Margin="0,0,8,0">
-                    <StackPanel>
-                        <TextBlock Text="Active" Foreground="{StaticResource TextSecondary}" FontSize="9"/>
-                        <TextBlock x:Name="ActiveStreamsCount" Text="0" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="Bold"/>
-                    </StackPanel>
-                </Border>
-                
-                <Border Grid.Column="2" Background="#1A10B981" CornerRadius="6" Padding="12,6">
+                <!-- Total Count -->
+                <Border Grid.Column="1" Background="#1A10B981" CornerRadius="6" Padding="12,6">
                     <StackPanel>
                         <TextBlock Text="Total" Foreground="{StaticResource TextSecondary}" FontSize="9"/>
                         <TextBlock x:Name="TotalCapturedCount" Text="0" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="Bold"/>
@@ -253,9 +254,17 @@
                 </StackPanel>
                 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse Style="{StaticResource CompactStatusIndicator}" Margin="0,0,6,0"/>
+                    <Ellipse x:Name="StatusIndicator" 
+                            Width="8" 
+                            Height="8" 
+                            Fill="{StaticResource AccentRed}"
+                            Margin="0,0,6,0">
+                        <Ellipse.Effect>
+                            <DropShadowEffect Color="#EF4444" Opacity="0.6" BlurRadius="4" ShadowDepth="0"/>
+                        </Ellipse.Effect>
+                    </Ellipse>
                     <TextBlock x:Name="ConnectionStatus" 
-                               Text="Ready" 
+                               Text="Not Active" 
                                Foreground="{StaticResource TextSecondary}"
                                FontSize="11"
                                VerticalAlignment="Center"/>
@@ -357,8 +366,106 @@
             </Grid>
         </Border>
 
+        <!-- Artist Section -->
+        <Border Grid.Row="3" Style="{StaticResource CompactCard}" Padding="0" Margin="0,0,0,8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                
+                <!-- Compact Table Header -->
+                <Border Grid.Row="0" Background="#1A1B3A" CornerRadius="8,8,0,0" Padding="12,8">
+                    <TextBlock Text="Artist Section" 
+                               Foreground="{StaticResource TextPrimary}" 
+                               FontSize="13" 
+                               FontWeight="SemiBold"/>
+                </Border>
+                
+                <!-- Compact Data Grid -->
+                <ListView Grid.Row="1" 
+                          x:Name="ArtistListView" 
+                          Style="{StaticResource CompactListView}"
+                          ItemContainerStyle="{StaticResource CompactListViewItem}"
+                          Padding="4">
+                    <ListView.View>
+                        <GridView ColumnHeaderContainerStyle="{StaticResource CompactGridViewColumnHeader}">
+                            <GridViewColumn Header="" Width="60">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Width="40" Height="40" CornerRadius="4" ClipToBounds="True">
+                                            <Image Source="{Binding ThumbnailUrl}" 
+                                                   Stretch="UniformToFill"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="ARTIST" Width="200">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Artist}" 
+                                                   Foreground="{StaticResource TextPrimary}"
+                                                   FontFamily="Consolas"
+                                                   FontSize="10"
+                                                   FontWeight="Medium"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="ARTIST STATION URL" Width="400">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding ArtistStationUrl}" 
+                                                   Foreground="{StaticResource TextSecondary}"
+                                                   FontFamily="Consolas"
+                                                   FontSize="9"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding ArtistStationUrl}"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="ACTIONS" Width="180">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button Content="▶ Play" 
+                                                    Click="PlayArtistStation_Click" 
+                                                    Style="{StaticResource CompactActionButton}"
+                                                    Background="{StaticResource AccentGreen}"
+                                                    BorderBrush="{StaticResource AccentGreen}"
+                                                    Foreground="White"
+                                                    Margin="0,0,4,0"
+                                                    IsEnabled="{Binding CanPlay}"/>
+                                            <Button Content="☆ Favorite" 
+                                                    Click="ToggleFavorite_Click" 
+                                                    Foreground="White"
+                                                    Margin="0,0,4,0">
+                                                <Button.Style>
+                                                    <Style TargetType="Button" BasedOn="{StaticResource CompactActionButton}">
+                                                        <Setter Property="Background" Value="#374151"/>
+                                                        <Setter Property="BorderBrush" Value="#374151"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                                                                <Setter Property="Background" Value="#F59E0B"/>
+                                                                <Setter Property="BorderBrush" Value="#F59E0B"/>
+                                                                <Setter Property="Content" Value="★ Favorited"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </Grid>
+        </Border>
+
         <!-- Compact Status Footer -->
-        <Border Grid.Row="3" Style="{StaticResource CompactCard}" Padding="16,8">
+        <Border Grid.Row="4" Style="{StaticResource CompactCard}" Padding="16,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>

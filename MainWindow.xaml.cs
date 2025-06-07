@@ -9,6 +9,10 @@ using System.Windows.Threading;
 using System.IO;
 using System.Collections.ObjectModel;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
+using System.Linq;
 
 namespace SRXMDL;
 
@@ -19,15 +23,34 @@ public partial class MainWindow : Window
 {
     private ChromeDriver? driver;
     private CancellationTokenSource? cancellationTokenSource;
-    private bool isMonitoring = false;
+    private bool _isMonitoring = false;
+    public bool IsMonitoring
+    {
+        get => _isMonitoring;
+        private set
+        {
+            _isMonitoring = value;
+            // Update CanPlay for all artist entries
+            foreach (var entry in artistEntries)
+            {
+                entry.CanPlay = value;
+            }
+            ArtistListView.Items.Refresh();
+        }
+    }
     private ObservableCollection<StreamEntry> streamEntries;
+    private ObservableCollection<ArtistEntry> artistEntries;
+    private const string FAVORITES_FILE = "favorites.json";
 
     public MainWindow()
     {
         InitializeComponent();
         streamEntries = new ObservableCollection<StreamEntry>();
+        artistEntries = new ObservableCollection<ArtistEntry>();
         StreamListView.ItemsSource = streamEntries;
+        ArtistListView.ItemsSource = artistEntries;
         SetupLogging();
+        LoadFavorites();
     }
 
     private void SetupLogging()
@@ -71,17 +94,132 @@ public partial class MainWindow : Window
         }
     }
 
+    private void LoadFavorites()
+    {
+        try
+        {
+            if (File.Exists(FAVORITES_FILE))
+            {
+                var favorites = JsonSerializer.Deserialize<List<ArtistEntry>>(File.ReadAllText(FAVORITES_FILE));
+                if (favorites != null)
+                {
+                    foreach (var favorite in favorites)
+                    {
+                        favorite.IsFavorite = true;
+                        favorite.CanPlay = IsMonitoring;
+                        artistEntries.Add(favorite);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error loading favorites");
+        }
+    }
+
+    private void SaveFavorites()
+    {
+        try
+        {
+            var favorites = artistEntries.Where(a => a.IsFavorite).ToList();
+            var json = JsonSerializer.Serialize(favorites, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(FAVORITES_FILE, json);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error saving favorites");
+        }
+    }
+
+    private void ToggleFavorite_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.DataContext is ArtistEntry entry)
+        {
+            entry.IsFavorite = !entry.IsFavorite;
+            SaveFavorites();
+            
+            // Update button appearance
+            UpdateFavoriteButtonAppearance(button, entry.IsFavorite);
+        }
+    }
+
+    private void UpdateFavoriteButtonAppearance(Button button, bool isFavorite)
+    {
+        if (isFavorite)
+        {
+            button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B")); // Yellow
+            button.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B"));
+            button.Content = "★ Favorited";
+        }
+        else
+        {
+            button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#374151")); // Default
+            button.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#374151"));
+            button.Content = "☆ Favorite";
+        }
+    }
+
+    private void UpdateMonitoringStatus(bool isActive)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            IsMonitoring = isActive;
+            if (isActive)
+            {
+                StatusIndicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981")); // AccentGreen
+                StatusIndicator.Effect = new DropShadowEffect
+                {
+                    Color = (Color)ColorConverter.ConvertFromString("#10B981"),
+                    Opacity = 0.6,
+                    BlurRadius = 4,
+                    ShadowDepth = 0
+                };
+                ConnectionStatus.Text = "Active";
+                
+                // Start blinking animation
+                var blinkAnimation = (Storyboard)FindResource("BlinkAnimation");
+                blinkAnimation.Begin(StatusIndicator);
+            }
+            else
+            {
+                StatusIndicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EF4444")); // AccentRed
+                StatusIndicator.Effect = new DropShadowEffect
+                {
+                    Color = (Color)ColorConverter.ConvertFromString("#EF4444"),
+                    Opacity = 0.6,
+                    BlurRadius = 4,
+                    ShadowDepth = 0
+                };
+                ConnectionStatus.Text = "Not Active";
+                
+                // Stop any running animation
+                StatusIndicator.BeginAnimation(UIElement.OpacityProperty, null);
+                StatusIndicator.Opacity = 1;
+            }
+        });
+    }
+
     private async void StartButton_Click(object sender, RoutedEventArgs e)
     {
-        if (isMonitoring) return;
+        if (IsMonitoring) return;
 
         try
         {
             StartButton.IsEnabled = false;
             StopButton.IsEnabled = true;
             StatusText.Text = "Starting...";
-            isMonitoring = true;
+            IsMonitoring = true;
             streamEntries.Clear();
+            
+            // Instead of clearing all entries, only clear non-favorites
+            var nonFavorites = artistEntries.Where(a => !a.IsFavorite).ToList();
+            foreach (var entry in nonFavorites)
+            {
+                artistEntries.Remove(entry);
+            }
+            
+            UpdateMonitoringStatus(true);
 
             cancellationTokenSource = new CancellationTokenSource();
 
@@ -186,7 +324,7 @@ public partial class MainWindow : Window
 
     private async Task StopMonitoring()
     {
-        if (!isMonitoring) return;
+        if (!IsMonitoring) return;
 
         try
         {
@@ -201,10 +339,11 @@ public partial class MainWindow : Window
         }
         finally
         {
-            isMonitoring = false;
+            IsMonitoring = false;
             StartButton.IsEnabled = true;
             StopButton.IsEnabled = false;
             StatusText.Text = "Ready";
+            UpdateMonitoringStatus(false);
         }
     }
 
@@ -246,6 +385,12 @@ public partial class MainWindow : Window
                     return;
                 }
 
+                // Check current URL for artist station
+                if (driver?.Url != null && driver.Url.StartsWith("https://www.siriusxm.com/player/artist-station"))
+                {
+                    await ProcessArtistStationUrl(driver.Url);
+                }
+
                 var logs = driver?.Manage().Logs.GetLog(LogType.Performance);
                 if (logs != null)
                 {
@@ -259,6 +404,12 @@ public partial class MainWindow : Window
                                 var url = logEntry.Message.Params?.Response?.Url;
                                 if (url != null)
                                 {
+                                    // Check for artist station URLs
+                                    if (url.StartsWith("https://www.siriusxm.com/player/artist-station"))
+                                    {
+                                        await ProcessArtistStationUrl(url);
+                                    }
+
                                     // Skip image traffic and imgsrv-sxm domain
                                     if (url.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
                                         url.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
@@ -299,6 +450,8 @@ public partial class MainWindow : Window
                                                 StreamType = streamType,
                                                 Url = url
                                             });
+                                            // Update total count
+                                            TotalCapturedCount.Text = streamEntries.Count.ToString();
                                         });
                                     }
                                 }
@@ -517,6 +670,132 @@ public partial class MainWindow : Window
         StopMonitoring().Wait();
         Log.CloseAndFlush();
     }
+
+    private async Task ProcessArtistStationUrl(string url)
+    {
+        try
+        {
+            // Wait for the page to load and find the title element
+            if (driver != null)
+            {
+                try
+                {
+                    // Wait for the title element to be present
+                    var wait = new OpenQA.Selenium.Support.UI.WebDriverWait(driver, TimeSpan.FromSeconds(10));
+                    var titleElement = wait.Until(d => d.FindElement(By.CssSelector("span[data-qa='content-page-title']")));
+                    
+                    var artistName = titleElement.Text.Trim();
+                    
+                    // Find the thumbnail image
+                    string thumbnailUrl = "";
+                    try
+                    {
+                        var thumbnailElement = driver.FindElement(By.CssSelector("span.image-module__image-inner___rZWHj img.image-module__image-image___WKoaX"));
+                        thumbnailUrl = thumbnailElement.GetAttribute("src");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "Could not find thumbnail image for artist: {Artist}", artistName);
+                    }
+                    
+                    // Check if this artist is already in the list
+                    var existingArtist = artistEntries.FirstOrDefault(a => a.ArtistStationUrl == url);
+                    if (existingArtist == null)
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            artistEntries.Add(new ArtistEntry
+                            {
+                                Artist = artistName,
+                                ArtistStationUrl = url,
+                                ThumbnailUrl = thumbnailUrl,
+                                CanPlay = IsMonitoring
+                            });
+                        });
+                        Log.Information("Artist station detected: {Artist} - {Url} - Thumbnail: {Thumbnail}", artistName, url, thumbnailUrl);
+                    }
+                }
+                catch (OpenQA.Selenium.WebDriverTimeoutException)
+                {
+                    Log.Warning("Timeout waiting for artist title element on page: {Url}", url);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Error finding artist title element on page: {Url}", url);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error processing artist station URL: {Url}", url);
+        }
+    }
+
+    private async void PlayArtistStation_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.DataContext is ArtistEntry entry)
+        {
+            try
+            {
+                if (driver != null)
+                {
+                    // If we're already on the correct page, just click play
+                    if (driver.Url == entry.ArtistStationUrl)
+                    {
+                        await ClickPlayButton(entry.Artist);
+                        return;
+                    }
+
+                    // Navigate to the artist station URL
+                    driver.Navigate().GoToUrl(entry.ArtistStationUrl);
+                    
+                    // Wait for the play button to be present and click it
+                    await ClickPlayButton(entry.Artist);
+                }
+                else
+                {
+                    StatusText.Text = "Browser not initialized";
+                    Log.Warning("Attempted to play artist station but browser was not initialized");
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = "Error playing station";
+                Log.Error(ex, "Error playing artist station: {Artist}", entry.Artist);
+            }
+        }
+    }
+
+    private async Task ClickPlayButton(string artistName)
+    {
+        try
+        {
+            var wait = new OpenQA.Selenium.Support.UI.WebDriverWait(driver, TimeSpan.FromSeconds(5));
+            
+            // Try to find the play button with the specific artist name first
+            try
+            {
+                var playButton = wait.Until(d => d.FindElement(By.CssSelector($"button[aria-label='Play {artistName} Station']")));
+                ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView(true);", playButton);
+                playButton.Click();
+            }
+            catch (OpenQA.Selenium.WebDriverTimeoutException)
+            {
+                // If specific button not found, try the generic play button
+                Log.Warning("Specific play button not found for {Artist}, trying generic play button", artistName);
+                var playButton = wait.Until(d => d.FindElement(By.CssSelector("button[aria-label*='Play']")));
+                ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView(true);", playButton);
+                playButton.Click();
+            }
+            
+            StatusText.Text = $"Playing {artistName} station...";
+            Log.Information("Started playing artist station: {Artist}", artistName);
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Failed to click play button: {ex.Message}", ex);
+        }
+    }
 }
 
 // Classes to deserialize the cookie JSON
@@ -599,4 +878,13 @@ public class StreamEntry
     public string StreamType { get; set; }
     public string Url { get; set; }
     public bool CanPlay => StreamType == "mp4" || StreamType == "mp3" || StreamType == "m3u8";
+}
+
+public class ArtistEntry
+{
+    public string Artist { get; set; }
+    public string ArtistStationUrl { get; set; }
+    public string ThumbnailUrl { get; set; }
+    public bool IsFavorite { get; set; }
+    public bool CanPlay { get; set; }
 }
