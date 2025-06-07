@@ -16,7 +16,7 @@
     },
     {
       "domain": ".siriusxm.com",
-      "expirationDate": 1783260902.65567,
+      "expirationDate": 1783260902,
       "hostOnly": false,
       "httpOnly": false,
       "name": "SSO_TOKEN",
@@ -68,7 +68,7 @@
     },
     {
       "domain": ".siriusxm.com",
-      "expirationDate": null,
+      "expirationDate": 0,
       "hostOnly": false,
       "httpOnly": false,
       "name": "DEVICE_GRANT",
@@ -81,7 +81,7 @@
     },
     {
       "domain": ".siriusxm.com",
-      "expirationDate": 1756908968,
+      "expirationDate": 1757026523,
       "hostOnly": false,
       "httpOnly": false,
       "name": "AUTH_TOKEN",

@@ -350,9 +350,47 @@ public partial class MainWindow : Window
                 File.Delete("cookies/temp.json");
                 Log.Information("Cookie update completed and temp.json deleted");
             }
+            else if (File.Exists("cookies/temp.txt"))
+            {
+                Log.Information("Found temp.txt, updating main cookie file...");
+
+                var tempContent = await File.ReadAllTextAsync("cookies/temp.txt");
+                var tempData = ParseNetscapeCookieFile(tempContent);
+                var mainJson = await File.ReadAllTextAsync("cookies/www.siriusxm.com.json");
+                var mainData = JsonSerializer.Deserialize<CookieData>(mainJson);
+
+                // Create dictionary with the last occurrence of each cookie
+                var tempCookies = new Dictionary<string, CookieInfo>();
+                foreach (var cookie in tempData.Cookies)
+                {
+                    tempCookies[cookie.Name] = cookie; // This will overwrite any previous cookie with the same name
+                }
+
+                // Update values in mainData
+                foreach (var cookie in mainData.Cookies)
+                {
+                    if (tempCookies.TryGetValue(cookie.Name, out var tempCookie))
+                    {
+                        cookie.Value = tempCookie.Value;
+                        // Also update other properties if they exist in the temp cookie
+                        if (tempCookie.ExpirationDate.HasValue)
+                            cookie.ExpirationDate = tempCookie.ExpirationDate;
+                        if (!string.IsNullOrEmpty(tempCookie.Path))
+                            cookie.Path = tempCookie.Path;
+                        cookie.Secure = tempCookie.Secure;
+                        cookie.HttpOnly = tempCookie.HttpOnly;
+                    }
+                }
+
+                var updatedJson = JsonSerializer.Serialize(mainData, new JsonSerializerOptions { WriteIndented = true });
+                await File.WriteAllTextAsync("cookies/www.siriusxm.com.json", updatedJson);
+
+                File.Delete("cookies/temp.txt");
+                Log.Information("Cookie update completed and temp.txt deleted");
+            }
             else
             {
-                Log.Information("No temp.json found, using existing cookie file");
+                Log.Information("No temp file found, using existing cookie file");
             }
         }
         catch (Exception ex)
@@ -360,6 +398,49 @@ public partial class MainWindow : Window
             Log.Error(ex, "Error during cookie management");
             throw;
         }
+    }
+
+    private CookieData ParseNetscapeCookieFile(string content)
+    {
+        var cookieData = new CookieData
+        {
+            Url = "https://www.siriusxm.com",
+            Cookies = new List<CookieInfo>()
+        };
+
+        var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        
+        // Skip the header line if it exists
+        int startIndex = lines[0].StartsWith("#") ? 1 : 0;
+
+        for (int i = startIndex; i < lines.Length; i++)
+        {
+            var line = lines[i].Trim();
+            if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+
+            var parts = line.Split('\t');
+            if (parts.Length >= 7)
+            {
+                var cookie = new CookieInfo
+                {
+                    Domain = parts[0],
+                    HttpOnly = false,
+                    Path = parts[2],
+                    Secure = parts[3] == "TRUE",
+                    ExpirationDate = double.Parse(parts[4]),
+                    Name = parts[5],
+                    Value = parts[6],
+                    HostOnly = false,
+                    SameSite = "no_restriction",
+                    Session = false,
+                    StoreId = "0"
+                };
+
+                cookieData.Cookies.Add(cookie);
+            }
+        }
+
+        return cookieData;
     }
 
     private async Task NavigateWithRetry(IWebDriver driver, string url, int maxRetries = 3)
