@@ -13,6 +13,14 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using System.Linq;
+using System.Windows.Media.Imaging;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Media.Animation;
+using OpenQA.Selenium.Support.UI;
+using System.Net.Http;
+using System.Windows.Shapes;
+using System.Windows.Input;
 
 namespace SRXMDL;
 
@@ -24,6 +32,13 @@ public partial class MainWindow : Window
     private ChromeDriver? driver;
     private CancellationTokenSource? cancellationTokenSource;
     private bool _isMonitoring = false;
+    private bool _isPaused = false;
+    private NowPlaying currentTrack;
+    private DispatcherTimer nowPlayingTimer;
+    private FileSystemWatcher? stationFeedbackWatcher;
+    private string? lastTuneSourceUrl;
+    private string? lastTuneSourcePayload;
+    private string? lastTuneSourceAuthToken;
     public bool IsMonitoring
     {
         get => _isMonitoring;
@@ -49,8 +64,11 @@ public partial class MainWindow : Window
         artistEntries = new ObservableCollection<ArtistEntry>();
         StreamListView.ItemsSource = streamEntries;
         ArtistListView.ItemsSource = artistEntries;
+        currentTrack = new NowPlaying();
         SetupLogging();
         LoadFavorites();
+        SetupNowPlayingTimer();
+        SetupStationFeedbackWatcher();
     }
 
     private void SetupLogging()
@@ -160,6 +178,109 @@ public partial class MainWindow : Window
         }
     }
 
+    private void SetupNowPlayingTimer()
+    {
+        nowPlayingTimer = new DispatcherTimer();
+        nowPlayingTimer.Interval = TimeSpan.FromSeconds(2);
+        nowPlayingTimer.Tick += async (s, e) => await UpdateNowPlaying();
+    }
+
+    private async Task UpdateNowPlaying()
+    {
+        if (driver == null || !IsMonitoring) return;
+
+        try
+        {
+            var wait = new OpenQA.Selenium.Support.UI.WebDriverWait(driver, TimeSpan.FromSeconds(5));
+            
+            // Get track name
+            string newTrackName = "No track playing";
+            try
+            {
+                var trackElement = wait.Until(d => d.FindElement(By.CssSelector("div.styles-module__title___D3wQt")));
+                newTrackName = trackElement.Text.Trim();
+                
+                // Skip if the new track name is exactly the same as the current one
+                if (newTrackName == currentTrack.TrackName)
+                {
+                    return;
+                }
+            }
+            catch
+            {
+                // Keep existing track name if we can't get a new one
+                newTrackName = currentTrack.TrackName ?? "No track playing";
+            }
+
+            // Get station name
+            string newStationName = "No station selected";
+            try
+            {
+                var stationElement = wait.Until(d => d.FindElement(By.CssSelector("div.styles-module__text___xT9yv span")));
+                newStationName = stationElement.Text.Trim();
+            }
+            catch
+            {
+                // Keep existing station name if we can't get a new one
+                newStationName = currentTrack.StationName ?? "No station selected";
+            }
+
+            // Get album art
+            string newAlbumArtUrl = "";
+            try
+            {
+                var albumArtElement = wait.Until(d => d.FindElement(By.CssSelector("div.styles-module__imageContainer___b-ipU img")));
+                newAlbumArtUrl = albumArtElement.GetAttribute("src");
+                Log.Debug("Found album art URL: {Url}", newAlbumArtUrl);
+            }
+            catch (Exception ex)
+            {
+                // Keep existing album art URL if we can't get a new one
+                newAlbumArtUrl = currentTrack.AlbumArtUrl ?? "";
+                Log.Debug(ex, "Could not find album art element");
+            }
+
+            // Only update UI if values have changed
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (newTrackName != currentTrack.TrackName)
+                {
+                    currentTrack.TrackName = newTrackName;
+                    NowPlayingTrack.Text = newTrackName;
+                    Log.Debug("Updated track name to: {TrackName}", newTrackName);
+                }
+
+                if (newStationName != currentTrack.StationName)
+                {
+                    currentTrack.StationName = newStationName;
+                    NowPlayingStation.Text = newStationName;
+                    Log.Debug("Updated station name to: {StationName}", newStationName);
+                }
+
+                if (newAlbumArtUrl != currentTrack.AlbumArtUrl)
+                {
+                    currentTrack.AlbumArtUrl = newAlbumArtUrl;
+                    if (!string.IsNullOrEmpty(newAlbumArtUrl))
+                    {
+                        try
+                        {
+                            NowPlayingArt.Source = new BitmapImage(new Uri(newAlbumArtUrl));
+                            Log.Debug("Updated album art image");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error(ex, "Error loading album art image from URL: {Url}", newAlbumArtUrl);
+                        }
+                    }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error updating now playing information");
+        }
+    }
+
     private void UpdateMonitoringStatus(bool isActive)
     {
         Dispatcher.Invoke(() =>
@@ -180,6 +301,9 @@ public partial class MainWindow : Window
                 // Start blinking animation
                 var blinkAnimation = (Storyboard)FindResource("BlinkAnimation");
                 blinkAnimation.Begin(StatusIndicator);
+
+                // Start now playing updates
+                nowPlayingTimer.Start();
             }
             else
             {
@@ -196,6 +320,14 @@ public partial class MainWindow : Window
                 // Stop any running animation
                 StatusIndicator.BeginAnimation(UIElement.OpacityProperty, null);
                 StatusIndicator.Opacity = 1;
+
+                // Stop now playing updates
+                nowPlayingTimer.Stop();
+                
+                // Clear now playing information
+                NowPlayingTrack.Text = "No track playing";
+                NowPlayingStation.Text = "No station selected";
+                NowPlayingArt.Source = null;
             }
         });
     }
@@ -332,6 +464,23 @@ public partial class MainWindow : Window
             driver?.Quit();
             driver?.Dispose();
             driver = null;
+
+            // Clear all files in the Stations directory
+            if (Directory.Exists("Stations"))
+            {
+                foreach (var file in Directory.GetFiles("Stations"))
+                {
+                    try
+                    {
+                        File.Delete(file);
+                        Log.Information("Deleted file: {File}", file);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "Error deleting file: {File}", file);
+                    }
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -345,6 +494,29 @@ public partial class MainWindow : Window
             StatusText.Text = "Ready";
             UpdateMonitoringStatus(false);
         }
+    }
+
+    private string ExtractFileNameFromUrl(string url)
+    {
+        try
+        {
+            // Extract the last part of the URL after the last '/'
+            var fileName = url.Split('/').Last();
+            // Remove any query parameters if present
+            fileName = fileName.Split('?')[0];
+            return fileName;
+        }
+        catch
+        {
+            return url; // Return original URL if parsing fails
+        }
+    }
+
+    private bool IsDuplicateStream(string url, out StreamEntry existingEntry)
+    {
+        var fileName = ExtractFileNameFromUrl(url);
+        existingEntry = streamEntries.FirstOrDefault(entry => ExtractFileNameFromUrl(entry.Url) == fileName);
+        return existingEntry != null;
     }
 
     private async Task MonitorNetworkTraffic(CancellationToken cancellationToken)
@@ -423,36 +595,360 @@ public partial class MainWindow : Window
                                         continue;
                                     }
 
-                                    // Monitor streaming traffic
-                                    if (url.Contains(".m3u8") ||
-                                        url.Contains(".mp3") ||
-                                        url.Contains(".mp4") ||
-                                        url.Contains("aod-akc-prod-device.streaming.siriusxm.com") ||
-                                        url.Contains("streaming.siriusxm.com"))
+                                    // Check for unnamed MP4 traffic
+                                    if (url.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) && !url.Contains("named"))
                                     {
-                                        string streamType = "unknown";
-                                        if (url.Contains(".m3u8")) streamType = "m3u8";
-                                        else if (url.Contains(".mp3")) streamType = "mp3";
-                                        else if (url.Contains(".mp4")) streamType = "mp4";
-                                        else if (url.Contains("aod-akc-prod-device.streaming.siriusxm.com")) streamType = "aod";
-                                        else if (url.Contains("streaming.siriusxm.com")) streamType = "stream";
+                                        StreamEntry existingEntry;
+                                        // Check if this is a duplicate file
+                                        if (IsDuplicateStream(url, out existingEntry))
+                                        {
+                                            Log.Debug("Skipping duplicate MP4 file: {Url}", url);
+                                            continue;
+                                        }
 
-                                        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                                        Log.Information("Stream Request detected [{StreamType}]: {Url}", streamType, url);
-                                        await File.AppendAllTextAsync("stream_requests.txt", $"{timestamp} [{streamType}]: {url}\n");
-
-                                        // Add to ListView
-                                        Dispatcher.Invoke(() =>
+                                        Log.Information("Unnamed MP4 traffic detected: {Url}", url);
+                                        await Dispatcher.InvokeAsync(() =>
                                         {
                                             streamEntries.Add(new StreamEntry
                                             {
-                                                Timestamp = timestamp,
-                                                StreamType = streamType,
-                                                Url = url
+                                                Timestamp = DateTime.Now.ToString("HH:mm:ss"),
+                                                StreamType = "mp4",
+                                                Url = url,
+                                                TrackName = "Unnamed MP4",
+                                                ArtistName = "Unknown"
                                             });
-                                            // Update total count
-                                            TotalCapturedCount.Text = streamEntries.Count.ToString();
                                         });
+                                        continue;
+                                    }
+
+                                    // Monitor station feedback endpoint
+                                    if (url.Contains("api.edge-gateway.siriusxm.com/stations/v1/station-feedback/station/type/artist-station/id"))
+                                    {
+                                        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                                        Log.Information("Station feedback request detected: {Url}", url);
+
+                                        // Get the auth token from the original request
+                                        var feedbackAuthToken = "";
+                                        string feedbackResponseBody = "";
+
+                                        var feedbackRequestLog = logs.FirstOrDefault(l =>
+                                        {
+                                            var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
+                                            return entry?.Message?.Method == "Network.requestWillBeSent" &&
+                                                   entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
+                                        });
+
+                                        if (feedbackRequestLog != null)
+                                        {
+                                            var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(feedbackRequestLog.Message);
+                                            
+                                            if (requestEntry?.Message?.Params?.Request?.Headers != null)
+                                            {
+                                                foreach (var header in requestEntry.Message.Params.Request.Headers)
+                                                {
+                                                    if (header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        feedbackAuthToken = header.Value;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Only proceed if we have a valid auth token
+                                        if (!string.IsNullOrEmpty(feedbackAuthToken))
+                                        {
+                                            // Ensure Stations directory exists
+                                            if (!Directory.Exists("Stations"))
+                                            {
+                                                Directory.CreateDirectory("Stations");
+                                            }
+
+                                            // Ensure files exist in Stations directory
+                                            if (!File.Exists("Stations/artiststationtemp.txt"))
+                                            {
+                                                File.Create("Stations/artiststationtemp.txt").Dispose();
+                                            }
+                                            if (!File.Exists("Stations/station_feedback.json"))
+                                            {
+                                                File.Create("Stations/station_feedback.json").Dispose();
+                                            }
+
+                                            // Save the auth token to artiststationtemp.txt (overwrite)
+                                            await File.WriteAllTextAsync("Stations/artiststationtemp.txt", feedbackAuthToken);
+                                            Log.Information("Auth token saved to Stations/artiststationtemp.txt");
+
+                                            // Get the response body
+                                            try
+                                            {
+                                                using (var httpClient = new HttpClient())
+                                                {
+                                                    httpClient.DefaultRequestHeaders.Add("Authorization", feedbackAuthToken);
+                                                    httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+                                                    
+                                                    // Make the GET request
+                                                    var response = await httpClient.GetAsync(url);
+                                                    feedbackResponseBody = await response.Content.ReadAsStringAsync();
+
+                                                    // Only log if the response was successful
+                                                    if (response.IsSuccessStatusCode)
+                                                    {
+                                                        // Format the JSON response with proper indentation
+                                                        var jsonElement = JsonSerializer.Deserialize<JsonElement>(feedbackResponseBody);
+                                                        var formattedJson = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions 
+                                                        { 
+                                                            WriteIndented = true 
+                                                        });
+
+                                                        // Save the formatted JSON to a .json file (overwrite)
+                                                        await File.WriteAllTextAsync("Stations/station_feedback.json", formattedJson);
+                                                    }
+                                                }
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                Log.Error(ex, "Error getting response body");
+                                            }
+                                        }
+                                    }
+                                    // Monitor tuneSource endpoint
+                                    else if (url.Contains("api.edge-gateway.siriusxm.com/playback/play/v1/tuneSource"))
+                                    {
+                                        Log.Information("TuneSource request detected: {Url}", url);
+
+                                        // Get the auth token and payload from the original request
+                                        var authToken = "";
+                                        var requestPayload = "";
+
+                                        var requestLog = logs.FirstOrDefault(l =>
+                                        {
+                                            var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
+                                            return entry?.Message?.Method == "Network.requestWillBeSent" &&
+                                                   entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
+                                        });
+
+                                        if (requestLog != null)
+                                        {
+                                            var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(requestLog.Message);
+                                            
+                                            if (requestEntry?.Message?.Params?.Request?.Headers != null)
+                                            {
+                                                foreach (var header in requestEntry.Message.Params.Request.Headers)
+                                                {
+                                                    if (header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        authToken = header.Value;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+
+                                            // Get the request payload
+                                            requestPayload = requestEntry?.Message?.Params?.Request?.PostData;
+                                        }
+
+                                        // Store the last tuneSource request data
+                                        lastTuneSourceUrl = url;
+                                        lastTuneSourcePayload = requestPayload;
+                                        lastTuneSourceAuthToken = authToken;
+
+                                        // Only proceed if we have a valid auth token and payload
+                                        if (!string.IsNullOrEmpty(authToken) && !string.IsNullOrEmpty(requestPayload))
+                                        {
+                                            // Ensure Stations directory exists
+                                            if (!Directory.Exists("Stations"))
+                                            {
+                                                Directory.CreateDirectory("Stations");
+                                            }
+
+                                            // Ensure tunesource.txt exists in Stations directory
+                                            if (!File.Exists("Stations/tunesource.txt"))
+                                            {
+                                                File.Create("Stations/tunesource.txt").Dispose();
+                                            }
+
+                                            // Save the auth token to tunesource.txt (overwrite)
+                                            await File.WriteAllTextAsync("Stations/tunesource.txt", authToken);
+                                            Log.Information("Auth token saved to Stations/tunesource.txt");
+
+                                            try
+                                            {
+                                                await SendTuneSourceRequest(url, requestPayload, authToken);
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                Log.Error(ex, "Error making POST request to tuneSource endpoint");
+                                            }
+                                        }
+                                    }
+                                    // Monitor peek endpoint
+                                    else if (url.Contains("api.edge-gateway.siriusxm.com/playback/play/v1/peek"))
+                                    {
+                                        Log.Information("Peek request detected: {Url}", url);
+
+                                        // Get the auth token and payload from the original request
+                                        var peekAuthToken = "";
+                                        var peekRequestPayload = "";
+
+                                        var peekRequestLog = logs.FirstOrDefault(l =>
+                                        {
+                                            var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
+                                            return entry?.Message?.Method == "Network.requestWillBeSent" &&
+                                                   entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
+                                        });
+
+                                        if (peekRequestLog != null)
+                                        {
+                                            var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(peekRequestLog.Message);
+                                            
+                                            if (requestEntry?.Message?.Params?.Request?.Headers != null)
+                                            {
+                                                foreach (var header in requestEntry.Message.Params.Request.Headers)
+                                                {
+                                                    if (header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        peekAuthToken = header.Value;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+
+                                            // Get the request payload
+                                            peekRequestPayload = requestEntry?.Message?.Params?.Request?.PostData;
+                                        }
+
+                                        // Only proceed if we have a valid auth token and payload
+                                        if (!string.IsNullOrEmpty(peekAuthToken) && !string.IsNullOrEmpty(peekRequestPayload))
+                                        {
+                                            // Ensure Stations directory exists
+                                            if (!Directory.Exists("Stations"))
+                                            {
+                                                Directory.CreateDirectory("Stations");
+                                            }
+
+                                            // Save the auth token to peek.txt (overwrite)
+                                            await File.WriteAllTextAsync("Stations/peek.txt", peekAuthToken);
+                                            Log.Information("Auth token saved to Stations/peek.txt");
+
+                                            // Save the payload to peek_payload.json
+                                            try
+                                            {
+                                                // Format the JSON payload with proper indentation
+                                                var jsonElement = JsonSerializer.Deserialize<JsonElement>(peekRequestPayload);
+                                                var formattedJson = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions 
+                                                { 
+                                                    WriteIndented = true 
+                                                });
+                                                await File.WriteAllTextAsync("Stations/peek_payload.json", formattedJson);
+                                                Log.Information("Peek payload saved to Stations/peek_payload.json");
+
+                                                // Replay the request
+                                                using (var httpClient = new HttpClient())
+                                                {
+                                                    httpClient.DefaultRequestHeaders.Add("Authorization", peekAuthToken);
+                                                    httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+                                                    
+                                                    var content = new StringContent(
+                                                        peekRequestPayload,
+                                                        System.Text.Encoding.UTF8,
+                                                        "application/json"
+                                                    );
+                                                    
+                                                    var response = await httpClient.PostAsync(url, content);
+                                                    var peekResponseBody = await response.Content.ReadAsStringAsync();
+
+                                                    if (response.IsSuccessStatusCode)
+                                                    {
+                                                        // Format the JSON response with proper indentation
+                                                        var responseElement = JsonSerializer.Deserialize<JsonElement>(peekResponseBody);
+                                                        var formattedResponse = JsonSerializer.Serialize(responseElement, new JsonSerializerOptions 
+                                                        { 
+                                                            WriteIndented = true 
+                                                        });
+
+                                                        // Save the formatted JSON to peek_response.json
+                                                        await File.WriteAllTextAsync("Stations/peek_response.json", formattedResponse);
+                                                        Log.Information("Peek response saved to Stations/peek_response.json");
+
+                                                        // Process stream information from peek response
+                                                        if (responseElement.TryGetProperty("streams", out var streamsElement) && streamsElement.ValueKind == JsonValueKind.Array)
+                                                        {
+                                                            foreach (var stream in streamsElement.EnumerateArray())
+                                                            {
+                                                                if (stream.TryGetProperty("metadata", out var metadata) &&
+                                                                    metadata.TryGetProperty("artist", out var artist) &&
+                                                                    artist.TryGetProperty("items", out var items) &&
+                                                                    items.ValueKind == JsonValueKind.Array)
+                                                                {
+                                                                    foreach (var item in items.EnumerateArray())
+                                                                    {
+                                                                        if (item.TryGetProperty("name", out var nameElement) &&
+                                                                            item.TryGetProperty("artistName", out var artistNameElement))
+                                                                        {
+                                                                            var trackName = nameElement.GetString();
+                                                                            var artistName = artistNameElement.GetString();
+
+                                                                            if (stream.TryGetProperty("urls", out var urls) &&
+                                                                                urls.ValueKind == JsonValueKind.Array)
+                                                                            {
+                                                                                foreach (var urlEntry in urls.EnumerateArray())
+                                                                                {
+                                                                                    if (urlEntry.TryGetProperty("url", out var urlElement) &&
+                                                                                        urlEntry.TryGetProperty("isPrimary", out var isPrimaryElement) &&
+                                                                                        isPrimaryElement.GetBoolean())
+                                                                                    {
+                                                                                        var streamUrl = urlElement.GetString();
+                                                                                        StreamEntry existingEntry;
+                                                                                        // Check if this is a duplicate file
+                                                                                        if (IsDuplicateStream(streamUrl, out existingEntry))
+                                                                                        {
+                                                                                            // If the existing entry is unnamed, update it with the title information
+                                                                                            if (existingEntry.TrackName == "Unnamed MP4")
+                                                                                            {
+                                                                                                await Dispatcher.InvokeAsync(() =>
+                                                                                                {
+                                                                                                    existingEntry.TrackName = trackName;
+                                                                                                    existingEntry.ArtistName = artistName;
+                                                                                                    // Refresh the ListView to show the updated information
+                                                                                                    StreamListView.Items.Refresh();
+                                                                                                });
+                                                                                                Log.Information("Updated unnamed entry with title: {TrackName} - {ArtistName}", trackName, artistName);
+                                                                                            }
+                                                                                            Log.Debug("Skipping duplicate stream URL: {Url}", streamUrl);
+                                                                                            continue;
+                                                                                        }
+                                                                                        await Dispatcher.InvokeAsync(() =>
+                                                                                        {
+                                                                                            streamEntries.Add(new StreamEntry
+                                                                                            {
+                                                                                                Timestamp = DateTime.Now.ToString("HH:mm:ss"),
+                                                                                                StreamType = "mp4",
+                                                                                                Url = streamUrl,
+                                                                                                TrackName = trackName,
+                                                                                                ArtistName = artistName
+                                                                                            });
+                                                                                        });
+                                                                                        break;
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        Log.Warning("Failed to get response from peek endpoint. Status code: {StatusCode}", response.StatusCode);
+                                                    }
+                                                }
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                Log.Error(ex, "Error processing peek request");
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -667,6 +1163,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
+        stationFeedbackWatcher?.Dispose();
         StopMonitoring().Wait();
         Log.CloseAndFlush();
     }
@@ -796,6 +1293,377 @@ public partial class MainWindow : Window
             throw new Exception($"Failed to click play button: {ex.Message}", ex);
         }
     }
+
+    private void ClearStreams_Click(object sender, RoutedEventArgs e)
+    {
+        streamEntries.Clear();
+        TotalCapturedCount.Text = "0";
+        StatusText.Text = "Stream activity cleared";
+        Log.Information("Stream activity cleared");
+    }
+
+    private void SetupStationFeedbackWatcher()
+    {
+        try
+        {
+            stationFeedbackWatcher = new FileSystemWatcher("Stations");
+            stationFeedbackWatcher.Filter = "station_feedback.json";
+            stationFeedbackWatcher.NotifyFilter = NotifyFilters.LastWrite;
+            stationFeedbackWatcher.Changed += OnStationFeedbackChanged;
+            stationFeedbackWatcher.EnableRaisingEvents = true;
+            Log.Information("Station feedback file watcher initialized");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error setting up station feedback watcher");
+        }
+    }
+
+    private async void OnStationFeedbackChanged(object sender, FileSystemEventArgs e)
+    {
+        try
+        {
+            // Wait a short moment to ensure the file is completely written
+            await Task.Delay(100);
+
+            if (!string.IsNullOrEmpty(lastTuneSourceUrl) && 
+                !string.IsNullOrEmpty(lastTuneSourcePayload) && 
+                !string.IsNullOrEmpty(lastTuneSourceAuthToken))
+            {
+                Log.Information("Station feedback updated, sending tuneSource request");
+                await SendTuneSourceRequest(lastTuneSourceUrl, lastTuneSourcePayload, lastTuneSourceAuthToken);
+            }
+            else
+            {
+                Log.Warning("Cannot send tuneSource request - missing previous request data");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error handling station feedback change");
+        }
+    }
+
+    private async Task SendTuneSourceRequest(string url, string payload, string authToken)
+    {
+        try
+        {
+            using (var httpClient = new HttpClient())
+            {
+                httpClient.DefaultRequestHeaders.Add("Authorization", authToken);
+                httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+                
+                var content = new StringContent(
+                    payload,
+                    System.Text.Encoding.UTF8,
+                    "application/json"
+                );
+                
+                var response = await httpClient.PostAsync(url, content);
+                var responseBody = await response.Content.ReadAsStringAsync();
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var jsonElement = JsonSerializer.Deserialize<JsonElement>(responseBody);
+                    var formattedJson = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions 
+                    { 
+                        WriteIndented = true 
+                    });
+
+                    await File.WriteAllTextAsync("Stations/Playlist.json", formattedJson);
+                    Log.Information("Response saved to Stations/Playlist.json");
+
+                    // Process stream information
+                    if (jsonElement.TryGetProperty("streams", out var streamsElement) && streamsElement.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var stream in streamsElement.EnumerateArray())
+                        {
+                            if (stream.TryGetProperty("metadata", out var metadata) &&
+                                metadata.TryGetProperty("artist", out var artist) &&
+                                artist.TryGetProperty("items", out var items) &&
+                                items.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var item in items.EnumerateArray())
+                                {
+                                    if (item.TryGetProperty("name", out var nameElement) &&
+                                        item.TryGetProperty("artistName", out var artistNameElement))
+                                    {
+                                        var trackName = nameElement.GetString();
+                                        var artistName = artistNameElement.GetString();
+
+                                        if (stream.TryGetProperty("urls", out var urls) &&
+                                            urls.ValueKind == JsonValueKind.Array)
+                                        {
+                                            foreach (var urlEntry in urls.EnumerateArray())
+                                            {
+                                                if (urlEntry.TryGetProperty("url", out var urlElement) &&
+                                                    urlEntry.TryGetProperty("isPrimary", out var isPrimaryElement) &&
+                                                    isPrimaryElement.GetBoolean())
+                                                {
+                                                    var streamUrl = urlElement.GetString();
+                                                    StreamEntry existingEntry;
+                                                    // Check if this is a duplicate file
+                                                    if (IsDuplicateStream(streamUrl, out existingEntry))
+                                                    {
+                                                        // If the existing entry is unnamed, update it with the title information
+                                                        if (existingEntry.TrackName == "Unnamed MP4")
+                                                        {
+                                                            await Dispatcher.InvokeAsync(() =>
+                                                            {
+                                                                existingEntry.TrackName = trackName;
+                                                                existingEntry.ArtistName = artistName;
+                                                                // Refresh the ListView to show the updated information
+                                                                StreamListView.Items.Refresh();
+                                                            });
+                                                            Log.Information("Updated unnamed entry with title: {TrackName} - {ArtistName}", trackName, artistName);
+                                                        }
+                                                        Log.Debug("Skipping duplicate stream URL: {Url}", streamUrl);
+                                                        continue;
+                                                    }
+                                                    await Dispatcher.InvokeAsync(() =>
+                                                    {
+                                                        streamEntries.Add(new StreamEntry
+                                                        {
+                                                            Timestamp = DateTime.Now.ToString("HH:mm:ss"),
+                                                            StreamType = "mp4",
+                                                            Url = streamUrl,
+                                                            TrackName = trackName,
+                                                            ArtistName = artistName
+                                                        });
+                                                    });
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    Log.Warning("Failed to get response from tuneSource endpoint. Status code: {StatusCode}", response.StatusCode);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error making POST request to tuneSource endpoint");
+        }
+    }
+
+    private async void PauseButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (driver == null || !IsMonitoring) return;
+
+        try
+        {
+            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
+            
+            if (!_isPaused)
+            {
+                // Find and click pause button
+                var pauseButton = wait.Until(d => d.FindElement(By.CssSelector("button[aria-label='Pause']")));
+                pauseButton.Click();
+                StatusText.Text = "Playback paused";
+                
+                // Update button to show play icon
+                if (sender is Button button)
+                {
+                    var pauseIcon = button.FindName("PauseIcon") as System.Windows.Shapes.Path;
+                    var playIcon = button.FindName("PlayIcon") as System.Windows.Shapes.Path;
+                    if (pauseIcon != null && playIcon != null)
+                    {
+                        pauseIcon.Visibility = Visibility.Collapsed;
+                        playIcon.Visibility = Visibility.Visible;
+                        playIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA")); // TextSecondary color
+                    }
+                }
+            }
+            else
+            {
+                // Find and click play button
+                var playButton = wait.Until(d => d.FindElement(By.CssSelector("button[aria-label='Play']")));
+                playButton.Click();
+                StatusText.Text = "Playback resumed";
+                
+                // Update button to show pause icon
+                if (sender is Button button)
+                {
+                    var pauseIcon = button.FindName("PauseIcon") as System.Windows.Shapes.Path;
+                    var playIcon = button.FindName("PlayIcon") as System.Windows.Shapes.Path;
+                    if (pauseIcon != null && playIcon != null)
+                    {
+                        pauseIcon.Visibility = Visibility.Visible;
+                        playIcon.Visibility = Visibility.Collapsed;
+                        pauseIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA")); // TextSecondary color
+                    }
+                }
+            }
+            
+            _isPaused = !_isPaused;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error toggling playback state");
+            StatusText.Text = "Error toggling playback";
+        }
+    }
+
+    private async void ForwardButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (driver == null || !IsMonitoring) return;
+
+        try
+        {
+            var wait = new OpenQA.Selenium.Support.UI.WebDriverWait(driver, TimeSpan.FromSeconds(5));
+            
+            // Try to find the forward button using the SVG path
+            try
+            {
+                var forwardButton = wait.Until(d => d.FindElement(By.CssSelector("svg[viewBox='0 0 24 24'] path[d*='M16.757 4.626']")));
+                // Find the parent button element
+                var buttonElement = forwardButton.FindElement(By.XPath("./ancestor::button"));
+                ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView(true);", buttonElement);
+                buttonElement.Click();
+                StatusText.Text = "Skipped to next track";
+                Log.Information("Clicked forward button");
+            }
+            catch (OpenQA.Selenium.WebDriverTimeoutException)
+            {
+                Log.Warning("Could not find forward button");
+                StatusText.Text = "Could not find forward button";
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error clicking forward button");
+            StatusText.Text = "Error skipping track";
+        }
+    }
+
+    private void PauseButton_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (sender is Button button)
+        {
+            var pauseIcon = button.FindName("PauseIcon") as System.Windows.Shapes.Path;
+            var playIcon = button.FindName("PlayIcon") as System.Windows.Shapes.Path;
+            if (pauseIcon != null && playIcon != null)
+            {
+                var whiteBrush = new SolidColorBrush(Colors.White);
+                if (pauseIcon.Visibility == Visibility.Visible)
+                {
+                    pauseIcon.Fill = whiteBrush;
+                }
+                else
+                {
+                    playIcon.Fill = whiteBrush;
+                }
+            }
+        }
+    }
+
+    private void PauseButton_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (sender is Button button)
+        {
+            var pauseIcon = button.FindName("PauseIcon") as System.Windows.Shapes.Path;
+            var playIcon = button.FindName("PlayIcon") as System.Windows.Shapes.Path;
+            if (pauseIcon != null && playIcon != null)
+            {
+                var secondaryBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA"));
+                if (pauseIcon.Visibility == Visibility.Visible)
+                {
+                    pauseIcon.Fill = secondaryBrush;
+                }
+                else
+                {
+                    playIcon.Fill = secondaryBrush;
+                }
+            }
+        }
+    }
+
+    private void ForwardButton_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (sender is Button button)
+        {
+            var forwardIcon = button.FindName("ForwardIcon") as System.Windows.Shapes.Path;
+            if (forwardIcon != null)
+            {
+                forwardIcon.Fill = new SolidColorBrush(Colors.White);
+            }
+        }
+    }
+
+    private void ForwardButton_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (sender is Button button)
+        {
+            var forwardIcon = button.FindName("ForwardIcon") as System.Windows.Shapes.Path;
+            if (forwardIcon != null)
+            {
+                forwardIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA"));
+            }
+        }
+    }
+
+    private void SkipBackButton_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (sender is Button button)
+        {
+            var skipBackIcon = button.FindName("SkipBackIcon") as System.Windows.Shapes.Path;
+            if (skipBackIcon != null)
+            {
+                skipBackIcon.Fill = new SolidColorBrush(Colors.White);
+            }
+        }
+    }
+
+    private void SkipBackButton_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (sender is Button button)
+        {
+            var skipBackIcon = button.FindName("SkipBackIcon") as System.Windows.Shapes.Path;
+            if (skipBackIcon != null)
+            {
+                skipBackIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA"));
+            }
+        }
+    }
+
+    private async void SkipBackButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (driver == null || !IsMonitoring) return;
+
+        try
+        {
+            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
+            
+            // Try to find the skip back button using the SVG path
+            try
+            {
+                var skipBackButton = wait.Until(d => d.FindElement(By.CssSelector("svg[viewBox='0 0 24 24'] path[d*='M7.764 4.554']")));
+                // Find the parent button element
+                var buttonElement = skipBackButton.FindElement(By.XPath("./ancestor::button"));
+                ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView(true);", buttonElement);
+                buttonElement.Click();
+                StatusText.Text = "Skipped to previous track";
+                Log.Information("Clicked skip back button");
+            }
+            catch (OpenQA.Selenium.WebDriverTimeoutException)
+            {
+                Log.Warning("Could not find skip back button");
+                StatusText.Text = "Could not find skip back button";
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error clicking skip back button");
+            StatusText.Text = "Error skipping track";
+        }
+    }
 }
 
 // Classes to deserialize the cookie JSON
@@ -864,12 +1732,30 @@ public class PerformanceParams
 {
     [JsonPropertyName("response")]
     public PerformanceResponse Response { get; set; }
+
+    [JsonPropertyName("requestId")]
+    public string RequestId { get; set; }
+
+    [JsonPropertyName("request")]
+    public PerformanceRequest Request { get; set; }
+}
+
+public class PerformanceRequest
+{
+    [JsonPropertyName("postData")]
+    public string PostData { get; set; }
+
+    [JsonPropertyName("headers")]
+    public Dictionary<string, string> Headers { get; set; }
 }
 
 public class PerformanceResponse
 {
     [JsonPropertyName("url")]
     public string Url { get; set; }
+
+    [JsonPropertyName("body")]
+    public string Body { get; set; }
 }
 
 public class StreamEntry
@@ -877,6 +1763,8 @@ public class StreamEntry
     public string Timestamp { get; set; }
     public string StreamType { get; set; }
     public string Url { get; set; }
+    public string TrackName { get; set; }
+    public string ArtistName { get; set; }
     public bool CanPlay => StreamType == "mp4" || StreamType == "mp3" || StreamType == "m3u8";
 }
 
@@ -887,4 +1775,11 @@ public class ArtistEntry
     public string ThumbnailUrl { get; set; }
     public bool IsFavorite { get; set; }
     public bool CanPlay { get; set; }
+}
+
+public class NowPlaying
+{
+    public string TrackName { get; set; }
+    public string StationName { get; set; }
+    public string AlbumArtUrl { get; set; }
 }

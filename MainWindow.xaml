@@ -33,6 +33,86 @@
         <SolidColorBrush x:Key="TextSecondary" Color="#A1A1AA"/>
         <SolidColorBrush x:Key="TextMuted" Color="#71717A"/>
         
+        <!-- Custom ScrollBar Style -->
+        <Style x:Key="{x:Type ScrollBar}" TargetType="ScrollBar">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid>
+                            <Track x:Name="PART_Track" Grid.Row="0" IsDirectionReversed="true">
+                                <Track.Thumb>
+                                    <Thumb x:Name="Thumb" Background="#4B4B4B" 
+                                           BorderThickness="0" 
+                                           Margin="0,2,0,2">
+                                        <Thumb.Style>
+                                            <Style TargetType="Thumb">
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="Thumb">
+                                                            <Border Background="{TemplateBinding Background}"
+                                                                    CornerRadius="4"/>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#6366F1"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Thumb.Style>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Custom ScrollViewer Style -->
+        <Style x:Key="{x:Type ScrollViewer}" TargetType="ScrollViewer">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollViewer">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <ScrollContentPresenter Grid.Column="0" Grid.Row="0"/>
+                            
+                            <ScrollBar x:Name="PART_VerticalScrollBar" 
+                                     Grid.Column="1" 
+                                     Grid.Row="0"
+                                     Orientation="Vertical"
+                                     Value="{TemplateBinding VerticalOffset}"
+                                     Maximum="{TemplateBinding ScrollableHeight}"
+                                     ViewportSize="{TemplateBinding ViewportHeight}"
+                                     Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
+                            
+                            <ScrollBar x:Name="PART_HorizontalScrollBar"
+                                     Grid.Column="0"
+                                     Grid.Row="1"
+                                     Orientation="Horizontal"
+                                     Value="{TemplateBinding HorizontalOffset}"
+                                     Maximum="{TemplateBinding ScrollableWidth}"
+                                     ViewportSize="{TemplateBinding ViewportWidth}"
+                                     Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
         <!-- Compact Glass Card -->
         <Style x:Key="CompactCard" TargetType="Border">
             <Setter Property="Background">
@@ -192,6 +272,7 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Compact Header -->
@@ -282,10 +363,24 @@
                 
                 <!-- Compact Table Header -->
                 <Border Grid.Row="0" Background="#1A1B3A" CornerRadius="8,8,0,0" Padding="12,8">
-                    <TextBlock Text="Stream Activity" 
-                               Foreground="{StaticResource TextPrimary}" 
-                               FontSize="13" 
-                               FontWeight="SemiBold"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Stream Activity" 
+                                   Foreground="{StaticResource TextPrimary}" 
+                                   FontSize="13" 
+                                   FontWeight="SemiBold"/>
+                        <Button Grid.Column="1"
+                                Content="Clear"
+                                Click="ClearStreams_Click"
+                                Style="{StaticResource CompactActionButton}"
+                                Background="{StaticResource AccentRed}"
+                                BorderBrush="{StaticResource AccentRed}"
+                                Foreground="White"
+                                Padding="12,4"/>
+                    </Grid>
                 </Border>
                 
                 <!-- Compact Data Grid -->
@@ -322,15 +417,20 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="URL" Width="320">
+                            <GridViewColumn Header="TRACK" Width="200">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding Url}" 
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding TrackName}" 
+                                                       Foreground="{StaticResource TextPrimary}"
+                                                       FontFamily="Consolas"
+                                                       FontSize="10"
+                                                       FontWeight="Medium"/>
+                                            <TextBlock Text="{Binding ArtistName}" 
                                                    Foreground="{StaticResource TextSecondary}"
                                                    FontFamily="Consolas"
-                                                   FontSize="9"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   ToolTip="{Binding Url}"/>
+                                                       FontSize="9"/>
+                                        </StackPanel>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
@@ -465,7 +565,7 @@
         </Border>
 
         <!-- Compact Status Footer -->
-        <Border Grid.Row="4" Style="{StaticResource CompactCard}" Padding="16,8">
+        <Border Grid.Row="4" Style="{StaticResource CompactCard}" Padding="16,8" Margin="0,0,0,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -490,6 +590,161 @@
                            Foreground="{StaticResource TextMuted}"
                            FontSize="9"
                            VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+        
+        <!-- Now Playing Section -->
+        <Border Grid.Row="5" Style="{StaticResource CompactCard}" Padding="0" Margin="0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="80"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                
+                <!-- Album Art -->
+                <Border Grid.Column="0" Margin="10" CornerRadius="4" ClipToBounds="True">
+                    <Grid>
+                    <Image x:Name="NowPlayingArt" Stretch="UniformToFill"/>
+                        <Border Background="#80000000" Visibility="{Binding ElementName=NowPlayingArt, Path=Source, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}">
+                            <TextBlock Text="&#xE8D6;" 
+                                     FontFamily="Segoe MDL2 Assets" 
+                                     FontSize="32" 
+                                     Foreground="White" 
+                                     HorizontalAlignment="Center" 
+                                     VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                </Border>
+                
+                <!-- Track Info and Controls -->
+                <Grid Grid.Column="1" Margin="10,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Track Name -->
+                    <TextBlock x:Name="NowPlayingTrack" 
+                             Text="No track playing" 
+                             Foreground="White" 
+                             FontSize="16" 
+                             FontWeight="SemiBold"
+                             Margin="0,0,0,4"/>
+                    
+                    <!-- Station Name -->
+                    <StackPanel Grid.Row="1" Orientation="Horizontal">
+                        <TextBlock Text="&#xE8D6;" 
+                                 FontFamily="Segoe MDL2 Assets" 
+                                 FontSize="12" 
+                                 Foreground="#B3B3B3" 
+                                 Margin="0,0,4,0"/>
+                    <TextBlock x:Name="NowPlayingStation" 
+                             Text="No station selected" 
+                             Foreground="#B3B3B3" 
+                                 FontSize="14"/>
+                    </StackPanel>
+
+                    <!-- Playback Controls -->
+                    <StackPanel Grid.Row="2" 
+                              Orientation="Horizontal" 
+                              VerticalAlignment="Bottom"
+                              Margin="0,8,0,0">
+                        <Button x:Name="SkipBackButton"
+                                Click="SkipBackButton_Click"
+                                MouseEnter="SkipBackButton_MouseEnter"
+                                MouseLeave="SkipBackButton_MouseLeave"
+                                IsEnabled="{Binding IsMonitoring}"
+                                Margin="0,0,8,0"
+                                ToolTip="Skip to previous track">
+                            <Button.Content>
+                                <Grid Width="24" Height="24">
+                                    <Path x:Name="SkipBackIcon" 
+                                          Data="M7.764 4.554a1 1 0 1 0-2 0v14.747a1 1 0 1 0 2 0v-5.15l9.01 5.635.006.003a1.64 1.64 0 0 0 2.498-1.363V5.574A1.64 1.64 0 0 0 16.78 4.21l-.007.004-9.009 5.634zM8.096 12l9.182-5.743v11.486z" 
+                                          Fill="{StaticResource TextSecondary}"/>
+                                </Grid>
+                            </Button.Content>
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource CompactActionButton}">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </Trigger>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Foreground" Value="#4B4B4B"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button x:Name="PauseButton"
+                                Click="PauseButton_Click"
+                                MouseEnter="PauseButton_MouseEnter"
+                                MouseLeave="PauseButton_MouseLeave"
+                                IsEnabled="{Binding IsMonitoring}"
+                                Margin="0,0,8,0"
+                                ToolTip="Pause playback">
+                            <Button.Content>
+                                <Grid Width="24" Height="24">
+                                    <!-- Pause Icon -->
+                                    <Path x:Name="PauseIcon" 
+                                          Data="M7 2.754a2 2 0 0 0-2 2v14.492a2 2 0 0 0 4 0V4.754a2 2 0 0 0-2-2m10 0a2 2 0 0 0-2 2v14.492a2 2 0 0 0 4 0V4.754a2 2 0 0 0-2-2" 
+                                          Fill="{StaticResource TextSecondary}"/>
+                                    <!-- Play Icon -->
+                                    <Path x:Name="PlayIcon" 
+                                          Data="M20.692 10.702c1 .577 1 2.02 0 2.598L7.19 21.094a1.5 1.5 0 0 1-2.25-1.299V4.206a1.5 1.5 0 0 1 2.25-1.298z" 
+                                          Fill="{StaticResource TextSecondary}"
+                                          Visibility="Collapsed"/>
+                                </Grid>
+                            </Button.Content>
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource CompactActionButton}">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </Trigger>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Foreground" Value="#4B4B4B"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button x:Name="ForwardButton"
+                                Click="ForwardButton_Click"
+                                MouseEnter="ForwardButton_MouseEnter"
+                                MouseLeave="ForwardButton_MouseLeave"
+                                IsEnabled="{Binding IsMonitoring}"
+                                Margin="0,0,8,0"
+                                ToolTip="Skip to next track">
+                            <Button.Content>
+                                <Grid Width="24" Height="24">
+                                    <Path x:Name="ForwardIcon" 
+                                          Data="M16.757 4.626a1 1 0 1 1 2 0v14.747a1 1 0 1 1-2 0v-5.15l-9.009 5.635-.006.004a1.64 1.64 0 0 1-2.498-1.363V5.646a1.64 1.64 0 0 1 2.498-1.364l.006.004 9.01 5.634zm-.331 7.446L7.243 6.329v11.486z" 
+                                          Fill="{StaticResource TextSecondary}"/>
+                                </Grid>
+                            </Button.Content>
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource CompactActionButton}">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </Trigger>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Foreground" Value="#4B4B4B"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                </StackPanel>
+                </Grid>
             </Grid>
         </Border>
     </Grid>
