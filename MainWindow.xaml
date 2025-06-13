@@ -5,174 +5,114 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SRXMDL"
         mc:Ignorable="d"
-        Title="SiriusXM Monitor" Height="720" Width="720"
-        Background="#0A0B1E"
+        Title="SiriusXM Monitor" 
+        Height="900"
+        Width="1400"
+        Background="Transparent"
+        AllowsTransparency="True"
+        WindowStyle="None"
         ResizeMode="CanResize"
-        MinHeight="420"
-        MinWidth="680">
+        MinHeight="800"
+        MinWidth="1200"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown">
     
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         
-        <!-- Status Indicator Animation -->
-        <Storyboard x:Key="BlinkAnimation" RepeatBehavior="Forever">
-            <DoubleAnimation
-                Storyboard.TargetProperty="Opacity"
-                From="1" To="0.3" Duration="0:0:1"
-                AutoReverse="True"/>
+        <!-- Enhanced Animations -->
+        <Storyboard x:Key="StatusPulse" RepeatBehavior="Forever">
+            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0.4" Duration="0:0:1.2" AutoReverse="True">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseInOut"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
         </Storyboard>
         
-        <!-- Compact Color Palette -->
-        <SolidColorBrush x:Key="PrimaryBackground" Color="#0A0B1E"/>
-        <SolidColorBrush x:Key="CardBackground" Color="#1A1B3A"/>
-        <SolidColorBrush x:Key="AccentPurple" Color="#6366F1"/>
-        <SolidColorBrush x:Key="AccentBlue" Color="#00D4FF"/>
-        <SolidColorBrush x:Key="AccentGreen" Color="#10B981"/>
-        <SolidColorBrush x:Key="AccentRed" Color="#EF4444"/>
-        <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF"/>
-        <SolidColorBrush x:Key="TextSecondary" Color="#A1A1AA"/>
-        <SolidColorBrush x:Key="TextMuted" Color="#71717A"/>
+        <Storyboard x:Key="BlinkAnimation" RepeatBehavior="Forever">
+            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0.4" Duration="0:0:1" AutoReverse="True">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseInOut"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+        </Storyboard>
         
-        <!-- Custom ScrollBar Style -->
-        <Style x:Key="{x:Type ScrollBar}" TargetType="ScrollBar">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Width" Value="8"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ScrollBar">
-                        <Grid>
-                            <Track x:Name="PART_Track" Grid.Row="0" IsDirectionReversed="true">
-                                <Track.Thumb>
-                                    <Thumb x:Name="Thumb" Background="#4B4B4B" 
-                                           BorderThickness="0" 
-                                           Margin="0,2,0,2">
-                                        <Thumb.Style>
-                                            <Style TargetType="Thumb">
-                                                <Setter Property="Template">
-                                                    <Setter.Value>
-                                                        <ControlTemplate TargetType="Thumb">
-                                                            <Border Background="{TemplateBinding Background}"
-                                                                    CornerRadius="4"/>
-                                                        </ControlTemplate>
-                                                    </Setter.Value>
-                                                </Setter>
-                                                <Style.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter Property="Background" Value="#6366F1"/>
-                                                    </Trigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Thumb.Style>
-                                    </Thumb>
-                                </Track.Thumb>
-                            </Track>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <Storyboard x:Key="GlowAnimation" RepeatBehavior="Forever">
+            <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)" 
+                           From="8" To="20" Duration="0:0:2" AutoReverse="True">
+                <DoubleAnimation.EasingFunction>
+                    <SineEase EasingMode="EaseInOut"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+        </Storyboard>
 
-        <!-- Custom ScrollViewer Style -->
-        <Style x:Key="{x:Type ScrollViewer}" TargetType="ScrollViewer">
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ScrollViewer">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="*"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-                            
-                            <ScrollContentPresenter Grid.Column="0" Grid.Row="0"/>
-                            
-                            <ScrollBar x:Name="PART_VerticalScrollBar" 
-                                     Grid.Column="1" 
-                                     Grid.Row="0"
-                                     Orientation="Vertical"
-                                     Value="{TemplateBinding VerticalOffset}"
-                                     Maximum="{TemplateBinding ScrollableHeight}"
-                                     ViewportSize="{TemplateBinding ViewportHeight}"
-                                     Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
-                            
-                            <ScrollBar x:Name="PART_HorizontalScrollBar"
-                                     Grid.Column="0"
-                                     Grid.Row="1"
-                                     Orientation="Horizontal"
-                                     Value="{TemplateBinding HorizontalOffset}"
-                                     Maximum="{TemplateBinding ScrollableWidth}"
-                                     ViewportSize="{TemplateBinding ViewportWidth}"
-                                     Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"/>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!-- Premium Color Palette -->
+        <LinearGradientBrush x:Key="DarkGradient" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#0D0D0D" Offset="0"/>
+            <GradientStop Color="#1A1A2E" Offset="0.5"/>
+            <GradientStop Color="#16213E" Offset="1"/>
+        </LinearGradientBrush>
         
-        <!-- Compact Glass Card -->
-        <Style x:Key="CompactCard" TargetType="Border">
+        <LinearGradientBrush x:Key="CardGradient" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#1E1E2E" Offset="0"/>
+            <GradientStop Color="#2A2A3E" Offset="1"/>
+        </LinearGradientBrush>
+        
+        <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#FF6B6B" Offset="0"/>
+            <GradientStop Color="#4ECDC4" Offset="0.5"/>
+            <GradientStop Color="#45B7D1" Offset="1"/>
+        </LinearGradientBrush>
+        
+        <LinearGradientBrush x:Key="PurpleGradient" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#667EEA" Offset="0"/>
+            <GradientStop Color="#764BA2" Offset="1"/>
+        </LinearGradientBrush>
+        
+        <SolidColorBrush x:Key="NeonCyan" Color="#00FFFF"/>
+        <SolidColorBrush x:Key="NeonPink" Color="#FF1493"/>
+        <SolidColorBrush x:Key="NeonGreen" Color="#39FF14"/>
+        <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="TextSecondary" Color="#B8BCC8"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#6C7293"/>
+
+        <!-- Glassmorphism Card Style -->
+        <Style x:Key="GlassCard" TargetType="Border">
             <Setter Property="Background">
                 <Setter.Value>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1" Opacity="0.9">
-                        <GradientStop Color="#1A1B3A" Offset="0"/>
-                        <GradientStop Color="#2A2B5A" Offset="1"/>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1" Opacity="0.15">
+                        <GradientStop Color="#FFFFFF" Offset="0"/>
+                        <GradientStop Color="#FFFFFF" Offset="0.2"/>
+                        <GradientStop Color="#000000" Offset="1"/>
                     </LinearGradientBrush>
                 </Setter.Value>
             </Setter>
-            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="CornerRadius" Value="20"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#333355"/>
+            <Setter Property="BorderBrush">
+                <Setter.Value>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1" Opacity="0.3">
+                        <GradientStop Color="#FFFFFF" Offset="0"/>
+                        <GradientStop Color="#FFFFFF" Offset="0.5"/>
+                        <GradientStop Color="#000000" Offset="1"/>
+                    </LinearGradientBrush>
+                </Setter.Value>
+            </Setter>
             <Setter Property="Effect">
                 <Setter.Value>
-                    <DropShadowEffect Color="#000000" Opacity="0.3" BlurRadius="8" ShadowDepth="0"/>
+                    <DropShadowEffect Color="#000000" Opacity="0.3" BlurRadius="25" ShadowDepth="5"/>
                 </Setter.Value>
             </Setter>
         </Style>
         
-        <!-- Compact Primary Button -->
-        <Style x:Key="CompactPrimaryButton" TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource AccentPurple}"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Padding" Value="16,8"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#7C3AED"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Background" Value="#374151"/>
-                                <Setter Property="Foreground" Value="#6B7280"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Compact Action Button -->
-        <Style x:Key="CompactActionButton" TargetType="Button">
+        <!-- Neon Button Style -->
+        <Style x:Key="NeonButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
-            <Setter Property="Padding" Value="8,4"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#374151"/>
-            <Setter Property="FontSize" Value="10"/>
-            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="BorderBrush" Value="{StaticResource NeonCyan}"/>
+            <Setter Property="Padding" Value="20,12"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -180,14 +120,31 @@
                         <Border Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="4"
+                                CornerRadius="25"
                                 Padding="{TemplateBinding Padding}">
+                            <Border.Effect>
+                                <DropShadowEffect Color="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=BorderBrush.(SolidColorBrush.Color)}" 
+                                                Opacity="0.6" BlurRadius="15" ShadowDepth="0"/>
+                            </Border.Effect>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#374151"/>
-                                <Setter Property="Foreground" Value="White"/>
+                                <Setter Property="Background">
+                                    <Setter.Value>
+                                        <SolidColorBrush Color="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=BorderBrush.(SolidColorBrush.Color)}" Opacity="0.1"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background">
+                                    <Setter.Value>
+                                        <SolidColorBrush Color="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=BorderBrush.(SolidColorBrush.Color)}" Opacity="0.2"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -195,34 +152,91 @@
             </Setter>
         </Style>
 
-        <!-- Compact ListView -->
-        <Style x:Key="CompactListView" TargetType="ListView">
+        <!-- Gradient Action Button -->
+        <Style x:Key="GradientButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource PurpleGradient}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="15"
+                                Padding="{TemplateBinding Padding}">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#667EEA" Opacity="0.4" BlurRadius="12" ShadowDepth="0"/>
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                            <GradientStop Color="#7C8EF7" Offset="0"/>
+                                            <GradientStop Color="#8B5BAF" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Modern ListView -->
+        <Style x:Key="ModernListView" TargetType="ListView">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
         </Style>
 
-        <!-- Compact ListViewItem -->
-        <Style x:Key="CompactListViewItem" TargetType="ListViewItem">
+        <!-- Futuristic ListViewItem -->
+        <Style x:Key="FuturisticListViewItem" TargetType="ListViewItem">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Padding" Value="8,6"/>
-            <Setter Property="Margin" Value="0,0,0,1"/>
+            <Setter Property="Padding" Value="15,12"/>
+            <Setter Property="Margin" Value="0,2"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListViewItem">
                         <Border Background="{TemplateBinding Background}"
-                                CornerRadius="4"
+                                CornerRadius="12"
                                 Padding="{TemplateBinding Padding}">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000000" Opacity="0.1" BlurRadius="8" ShadowDepth="2"/>
+                            </Border.Effect>
                             <GridViewRowPresenter VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#2A2B5A"/>
+                                <Setter Property="Background">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0" Opacity="0.1">
+                                            <GradientStop Color="#00FFFF" Offset="0"/>
+                                            <GradientStop Color="#FF1493" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="#1A6366F1"/>
+                                <Setter Property="Background">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0" Opacity="0.2">
+                                            <GradientStop Color="#667EEA" Offset="0"/>
+                                            <GradientStop Color="#764BA2" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -230,13 +244,13 @@
             </Setter>
         </Style>
 
-        <!-- Compact GridViewColumnHeader -->
-        <Style x:Key="CompactGridViewColumnHeader" TargetType="GridViewColumnHeader">
+        <!-- Futuristic GridViewColumnHeader -->
+        <Style x:Key="FuturisticGridViewColumnHeader" TargetType="GridViewColumnHeader">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
-            <Setter Property="Padding" Value="8,8"/>
-            <Setter Property="FontWeight" Value="Medium"/>
-            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{StaticResource NeonCyan}"/>
+            <Setter Property="Padding" Value="15,15"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="Template">
@@ -252,21 +266,51 @@
             </Setter>
         </Style>
 
-        <!-- Compact Status Indicator -->
-        <Style x:Key="CompactStatusIndicator" TargetType="Ellipse">
-            <Setter Property="Width" Value="8"/>
-            <Setter Property="Height" Value="8"/>
-            <Setter Property="Fill" Value="{StaticResource AccentGreen}"/>
+        <!-- Neon Status Indicator -->
+        <Style x:Key="NeonStatusIndicator" TargetType="Ellipse">
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="Fill" Value="{StaticResource NeonGreen}"/>
             <Setter Property="Effect">
                 <Setter.Value>
-                    <DropShadowEffect Color="#10B981" Opacity="0.6" BlurRadius="4" ShadowDepth="0"/>
+                    <DropShadowEffect Color="#39FF14" Opacity="0.8" BlurRadius="8" ShadowDepth="0"/>
                 </Setter.Value>
             </Setter>
         </Style>
     </Window.Resources>
 
-    <Grid Margin="12">
+    <Grid>
+        <Grid.Background>
+            <RadialGradientBrush>
+                <GradientStop Color="#0D0D0D" Offset="0"/>
+                <GradientStop Color="#1A1A2E" Offset="0.7"/>
+                <GradientStop Color="#000000" Offset="1"/>
+            </RadialGradientBrush>
+        </Grid.Background>
+        
+        <!-- Animated Background Elements -->
+        <Canvas>
+            <Ellipse Width="200" Height="200" Canvas.Left="100" Canvas.Top="50" Opacity="0.05">
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop Color="#00FFFF" Offset="0"/>
+                        <GradientStop Color="Transparent" Offset="1"/>
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+            <Ellipse Width="150" Height="150" Canvas.Right="80" Canvas.Bottom="100" Opacity="0.08">
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop Color="#FF1493" Offset="0"/>
+                        <GradientStop Color="Transparent" Offset="1"/>
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+        </Canvas>
+
+        <Grid Margin="20">
         <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -275,187 +319,194 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Compact Header -->
-        <Border Grid.Row="0" Style="{StaticResource CompactCard}" Padding="16,12" Margin="0,0,0,8">
+            <!-- Custom Title Bar -->
+            <Border Grid.Row="0" 
+                    Background="{StaticResource CardGradient}" 
+                    CornerRadius="20,20,0,0" 
+                    Height="50" 
+                    Margin="-20,-20,-20,0"
+                    MouseLeftButtonDown="Window_MouseLeftButtonDown">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 
-                <!-- Title Section -->
-                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
-                        <Border Width="4" Height="4" Background="{StaticResource AccentBlue}" CornerRadius="2" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="25,0">
+                        <Ellipse Width="8" Height="8" Fill="{StaticResource NeonCyan}" Margin="0,0,10,0">
+                            <Ellipse.Effect>
+                                <DropShadowEffect Color="#00FFFF" Opacity="0.8" BlurRadius="8" ShadowDepth="0"/>
+                            </Ellipse.Effect>
+                        </Ellipse>
                         <TextBlock Text="SiriusXM Monitor" 
-                                   Foreground="{StaticResource TextPrimary}" 
-                                   FontSize="16" 
-                                   FontWeight="Bold"/>
+                                   Foreground="White" 
+                                   FontSize="10" 
+                                   FontWeight="SemiBold"/>
                     </StackPanel>
-                    <TextBlock Text="Stream monitoring" 
-                               Foreground="{StaticResource TextSecondary}"
-                               FontSize="11"/>
+                    
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <Button x:Name="MinimizeButton" Content="—" Click="MinimizeButton_Click"
+                                Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonCyan}"
+                                Width="40" Height="30" Padding="0" FontSize="16" Margin="5,0"/>
+                        <Button x:Name="MaximizeButton" Content="□" Click="MaximizeButton_Click"
+                                Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonCyan}"
+                                Width="40" Height="30" Padding="0" FontSize="14" Margin="5,0"/>
+                        <Button x:Name="CloseButton" Content="✕" Click="CloseButton_Click"
+                                Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonPink}"
+                                Width="40" Height="30" Padding="0" FontSize="14" Margin="5,0,15,0"/>
+                </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Hero Header -->
+            <Border Grid.Row="1" Style="{StaticResource GlassCard}" Padding="15,8" Margin="0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="SIRIUSXM" 
+                                   Foreground="{StaticResource AccentGradient}" 
+                                   FontSize="12" 
+                                   FontWeight="Black"
+                                   Margin="0,0,0,2">
+                            <TextBlock.Effect>
+                                <DropShadowEffect Color="#667EEA" Opacity="0.5" BlurRadius="8" ShadowDepth="0"/>
+                            </TextBlock.Effect>
+                        </TextBlock>
+                        <TextBlock Text="Advanced Stream Monitor" 
+                                   Foreground="{StaticResource TextSecondary}"
+                                   FontSize="10" 
+                                   FontWeight="Light"/>
                 </StackPanel>
                 
-                <!-- Total Count -->
-                <Border Grid.Column="1" Background="#1A10B981" CornerRadius="6" Padding="12,6">
-                    <StackPanel>
-                        <TextBlock Text="Total" Foreground="{StaticResource TextSecondary}" FontSize="9"/>
-                        <TextBlock x:Name="TotalCapturedCount" Text="0" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="Bold"/>
+                    <Border Grid.Column="1" Background="{StaticResource PurpleGradient}" 
+                            CornerRadius="8" Padding="10,5">
+                        <Border.Effect>
+                            <DropShadowEffect Color="#667EEA" Opacity="0.6" BlurRadius="10" ShadowDepth="0"/>
+                        </Border.Effect>
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="CAPTURED" Foreground="White" FontSize="8" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="TotalCapturedCount" Text="0" Foreground="White" FontSize="14" FontWeight="Black" HorizontalAlignment="Center"/>
                     </StackPanel>
                 </Border>
             </Grid>
         </Border>
 
-        <!-- Compact Control Panel -->
-        <Border Grid.Row="1" Style="{StaticResource CompactCard}" Padding="16,12" Margin="0,0,0,8">
+            <!-- Control Panel -->
+            <Border Grid.Row="2" Style="{StaticResource GlassCard}" Padding="40,25" Margin="0,0,0,20">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <Button x:Name="StartButton" 
-                            Content="▶ Start" 
-                            Click="StartButton_Click" 
-                            Style="{StaticResource CompactPrimaryButton}"
-                            Margin="0,0,8,0"/>
-                    <Button x:Name="StopButton" 
-                            Content="⏹ Stop" 
-                            Click="StopButton_Click" 
-                            Style="{StaticResource CompactPrimaryButton}"
-                            Background="{StaticResource AccentRed}"
-                            IsEnabled="False"
-                            Margin="0,0,8,0"/>
-                    <Button x:Name="ResetCookiesButton"
-                            Content="Reset Cookies"
-                            Click="ResetCookiesButton_Click"
-                            Style="{StaticResource CompactActionButton}"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="StartButton" Content="⚡ START MONITORING" Click="StartButton_Click" 
+                                Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonGreen}"
+                                Padding="30,15" FontSize="16" Margin="0,0,20,0" FontWeight="Bold">
+                            <Button.Effect>
+                                <DropShadowEffect Color="#39FF14" Opacity="0.8" BlurRadius="15" ShadowDepth="0"/>
+                            </Button.Effect>
+                        </Button>
+                        <Button x:Name="StopButton" Content="⏹ STOP" Click="StopButton_Click" 
+                                Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonPink}"
+                                IsEnabled="False" Padding="25,15" FontSize="16" Margin="0,0,20,0"/>
+                        <Button x:Name="ResetCookiesButton" Content="🔄 RESET" Click="ResetCookiesButton_Click"
+                                Style="{StaticResource GradientButton}" Padding="25,15" FontSize="14"/>
                 </StackPanel>
                 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse x:Name="StatusIndicator" 
-                            Width="8" 
-                            Height="8" 
-                            Fill="{StaticResource AccentRed}"
-                            Margin="0,0,6,0">
-                        <Ellipse.Effect>
-                            <DropShadowEffect Color="#EF4444" Opacity="0.6" BlurRadius="4" ShadowDepth="0"/>
-                        </Ellipse.Effect>
-                    </Ellipse>
-                    <TextBlock x:Name="ConnectionStatus" 
-                               Text="Not Active" 
-                               Foreground="{StaticResource TextSecondary}"
-                               FontSize="11"
+                        <Ellipse x:Name="StatusIndicator" Style="{StaticResource NeonStatusIndicator}"
+                                Fill="{StaticResource NeonPink}" Margin="0,0,15,0"/>
+                        <TextBlock x:Name="ConnectionStatus" Text="STANDBY" 
+                                   Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"
                                VerticalAlignment="Center"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- Compact Stream Data Table -->
-        <Border Grid.Row="2" Style="{StaticResource CompactCard}" Padding="0" Margin="0,0,0,8">
+            <!-- Stream Data Table -->
+            <Border Grid.Row="3" Style="{StaticResource GlassCard}" Padding="0" Margin="0,0,0,20">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 
-                <!-- Compact Table Header -->
-                <Border Grid.Row="0" Background="#1A1B3A" CornerRadius="8,8,0,0" Padding="12,8">
+                    <Border Grid.Row="0" Background="{StaticResource CardGradient}" 
+                            CornerRadius="20,20,0,0" Padding="30,20">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="Stream Activity" 
+                            <TextBlock Text="🎵 STREAM ACTIVITY" 
                                    Foreground="{StaticResource TextPrimary}" 
-                                   FontSize="13" 
-                                   FontWeight="SemiBold"/>
-                        <Button Grid.Column="1"
-                                Content="Clear"
-                                Click="ClearStreams_Click"
-                                Style="{StaticResource CompactActionButton}"
-                                Background="{StaticResource AccentRed}"
-                                BorderBrush="{StaticResource AccentRed}"
-                                Foreground="White"
-                                Padding="12,4"/>
+                                       FontSize="20" FontWeight="Bold"/>
+                            <Button Grid.Column="1" Content="CLEAR ALL" Click="ClearStreams_Click"
+                                    Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonPink}"
+                                    Padding="20,10" FontSize="12"/>
                     </Grid>
                 </Border>
                 
-                <!-- Compact Data Grid -->
-                <ListView Grid.Row="1" 
-                          x:Name="StreamListView" 
-                          Style="{StaticResource CompactListView}"
-                          ItemContainerStyle="{StaticResource CompactListViewItem}"
-                          Padding="4">
+                    <ListView Grid.Row="1" x:Name="StreamListView" 
+                              Style="{StaticResource ModernListView}"
+                              ItemContainerStyle="{StaticResource FuturisticListViewItem}"
+                              Padding="15">
                     <ListView.View>
-                        <GridView ColumnHeaderContainerStyle="{StaticResource CompactGridViewColumnHeader}">
-                            <GridViewColumn Header="TIME" Width="90">
+                            <GridView ColumnHeaderContainerStyle="{StaticResource FuturisticGridViewColumnHeader}">
+                                <GridViewColumn Header="⏰ TIME" Width="150">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding Timestamp, StringFormat=HH:mm:ss}" 
                                                    Foreground="{StaticResource TextPrimary}"
-                                                   FontFamily="Consolas"
-                                                   FontSize="10"
-                                                   FontWeight="Medium"/>
+                                                       FontFamily="JetBrains Mono, Consolas" FontSize="13" FontWeight="Medium"/>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="TYPE" Width="60">
+                                <GridViewColumn Header="🎯 TYPE" Width="120">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Border Background="{StaticResource AccentPurple}" 
-                                                CornerRadius="8" 
-                                                Padding="6,2">
+                                            <Border Background="{StaticResource AccentGradient}" 
+                                                    CornerRadius="12" Padding="12,6">
                                             <TextBlock Text="{Binding StreamType}" 
-                                                       Foreground="White"
-                                                       FontSize="8"
-                                                       FontWeight="SemiBold"
+                                                           Foreground="White" FontSize="11" FontWeight="Bold"
                                                        HorizontalAlignment="Center"/>
                                         </Border>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="TRACK" Width="200">
+                                <GridViewColumn Header="🎶 TRACK INFO" Width="400">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel>
                                             <TextBlock Text="{Binding TrackName}" 
                                                        Foreground="{StaticResource TextPrimary}"
-                                                       FontFamily="Consolas"
-                                                       FontSize="10"
-                                                       FontWeight="Medium"/>
+                                                           FontSize="14" FontWeight="SemiBold"/>
                                             <TextBlock Text="{Binding ArtistName}" 
                                                    Foreground="{StaticResource TextSecondary}"
-                                                   FontFamily="Consolas"
-                                                       FontSize="9"/>
+                                                           FontSize="12"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="ACTIONS" Width="180">
+                                <GridViewColumn Header="⚡ ACTIONS" Width="300">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
-                                            <Button Content="Copy" 
-                                                    Click="CopyButton_Click" 
-                                                    Style="{StaticResource CompactActionButton}"
-                                                    Margin="0,0,4,0"/>
-                                            <Button Content="Play" 
-                                                    Click="PlayButton_Click" 
-                                                    Style="{StaticResource CompactActionButton}"
-                                                    Background="{StaticResource AccentGreen}"
-                                                    BorderBrush="{StaticResource AccentGreen}"
-                                                    Foreground="White"
-                                                    Margin="0,0,4,0"
+                                                <Button Content="📋" Click="CopyButton_Click" 
+                                                        Style="{StaticResource GradientButton}"
+                                                        ToolTip="Copy Info" Margin="0,0,8,0"/>
+                                                <Button Content="▶️" Click="PlayButton_Click" 
+                                                        Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonGreen}"
+                                                        ToolTip="Play Track" Margin="0,0,8,0"
                                                     Visibility="{Binding CanPlay, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                            <Button Content="Save" 
-                                                    Style="{StaticResource CompactActionButton}"
-                                                    Background="{StaticResource AccentBlue}"
-                                                    BorderBrush="{StaticResource AccentBlue}"
-                                                    Foreground="White"
-                                                    Click="DownloadButton_Click"/>
+                                                <Button Content="💾" Click="DownloadButton_Click"
+                                                        Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonCyan}"
+                                                        ToolTip="Save Track"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
@@ -467,33 +518,30 @@
         </Border>
 
         <!-- Artist Section -->
-        <Border Grid.Row="3" Style="{StaticResource CompactCard}" Padding="0" Margin="0,0,0,8">
+            <Border Grid.Row="4" Style="{StaticResource GlassCard}" Padding="0" Margin="0,0,0,20">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 
-                <!-- Compact Table Header -->
-                <Border Grid.Row="0" Background="#1A1B3A" CornerRadius="8,8,0,0" Padding="12,8">
-                    <TextBlock Text="Artist Section" 
+                    <Border Grid.Row="0" Background="{StaticResource CardGradient}" 
+                            CornerRadius="20,20,0,0" Padding="30,20">
+                        <TextBlock Text="🎨 ARTIST SECTION" 
                                Foreground="{StaticResource TextPrimary}" 
-                               FontSize="13" 
-                               FontWeight="SemiBold"/>
+                                   FontSize="20" FontWeight="Bold"/>
                 </Border>
                 
-                <!-- Compact Data Grid -->
-                <ListView Grid.Row="1" 
-                          x:Name="ArtistListView" 
-                          Style="{StaticResource CompactListView}"
-                          ItemContainerStyle="{StaticResource CompactListViewItem}"
-                          Padding="4">
+                    <ListView Grid.Row="1" x:Name="ArtistListView" 
+                              Style="{StaticResource ModernListView}"
+                              ItemContainerStyle="{StaticResource FuturisticListViewItem}"
+                              Padding="15">
                     <ListView.View>
-                        <GridView ColumnHeaderContainerStyle="{StaticResource CompactGridViewColumnHeader}">
-                            <GridViewColumn Header="" Width="60">
+                            <GridView ColumnHeaderContainerStyle="{StaticResource FuturisticGridViewColumnHeader}">
+                            <GridViewColumn Header="" Width="80">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Border Width="40" Height="40" CornerRadius="4" ClipToBounds="True">
+                                            <Border Width="40" Height="40" CornerRadius="8" ClipToBounds="True">
                                             <Image Source="{Binding ThumbnailUrl}" 
                                                    Stretch="UniformToFill"
                                                    RenderOptions.BitmapScalingMode="HighQuality"/>
@@ -501,59 +549,51 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="ARTIST" Width="200">
+                            <GridViewColumn Header="ARTIST" Width="250">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding Artist}" 
                                                    Foreground="{StaticResource TextPrimary}"
-                                                   FontFamily="Consolas"
-                                                   FontSize="10"
-                                                   FontWeight="Medium"/>
+                                                       FontSize="14" FontWeight="SemiBold"/>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="ARTIST STATION URL" Width="400">
+                            <GridViewColumn Header="ARTIST STATION URL" Width="450">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding ArtistStationUrl}" 
                                                    Foreground="{StaticResource TextSecondary}"
-                                                   FontFamily="Consolas"
-                                                   FontSize="9"
+                                                       FontSize="12"
                                                    TextTrimming="CharacterEllipsis"
                                                    ToolTip="{Binding ArtistStationUrl}"/>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="ACTIONS" Width="180">
+                            <GridViewColumn Header="ACTIONS" Width="200">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
-                                            <Button Content="▶ Play" 
-                                                    Click="PlayArtistStation_Click" 
-                                                    Style="{StaticResource CompactActionButton}"
-                                                    Background="{StaticResource AccentGreen}"
-                                                    BorderBrush="{StaticResource AccentGreen}"
-                                                    Foreground="White"
-                                                    Margin="0,0,4,0"
+                                                <Button Content="▶️" Click="PlayArtistStation_Click" 
+                                                        Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonGreen}"
+                                                        ToolTip="Play Station" Margin="0,0,8,0"
                                                     IsEnabled="{Binding CanPlay}"/>
-                                            <Button Content="☆ Favorite" 
-                                                    Click="ToggleFavorite_Click" 
-                                                    Foreground="White"
-                                                    Margin="0,0,4,0">
+                                                <Button Content="⭐" Click="ToggleFavorite_Click" 
+                                                        ToolTip="Toggle Favorite" Margin="0,0,8,0">
                                                 <Button.Style>
-                                                    <Style TargetType="Button" BasedOn="{StaticResource CompactActionButton}">
-                                                        <Setter Property="Background" Value="#374151"/>
-                                                        <Setter Property="BorderBrush" Value="#374151"/>
+                                                        <Style TargetType="Button" BasedOn="{StaticResource NeonButton}">
+                                                            <Setter Property="BorderBrush" Value="{StaticResource NeonCyan}"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsFavorite}" Value="True">
-                                                                <Setter Property="Background" Value="#F59E0B"/>
-                                                                <Setter Property="BorderBrush" Value="#F59E0B"/>
-                                                                <Setter Property="Content" Value="★ Favorited"/>
+                                                                    <Setter Property="BorderBrush" Value="{StaticResource NeonPink}"/>
+                                                                    <Setter Property="Content" Value="★"/>
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
                                                 </Button.Style>
                                             </Button>
+                                                <Button Content="ℹ️" Click="ArtistInfoButton_Click"
+                                                        Style="{StaticResource GradientButton}"
+                                                        ToolTip="Artist Info"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
@@ -564,8 +604,8 @@
             </Grid>
         </Border>
 
-        <!-- Compact Status Footer -->
-        <Border Grid.Row="4" Style="{StaticResource CompactCard}" Padding="16,8" Margin="0,0,0,8">
+            <!-- Status Footer -->
+            <Border Grid.Row="6" Background="Transparent" Padding="20,10" Margin="0">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -573,42 +613,41 @@
                 </Grid.ColumnDefinitions>
                 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Background="#1A10B981" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
-                        <TextBlock Text="Ready" 
-                                   Foreground="White"
-                                   FontSize="9"
-                                   FontWeight="Medium"/>
+                        <Border Background="{StaticResource AccentGradient}" CornerRadius="8" Padding="8,4" Margin="0,0,12,0">
+                            <TextBlock Text="READY" 
+                                       Foreground="White" FontSize="10" FontWeight="Bold"/>
                     </Border>
                     <TextBlock x:Name="StatusText" 
                                Text="Monitoring service ready" 
                                Foreground="{StaticResource TextSecondary}"
-                               FontSize="10"
+                                   FontSize="12"
                                VerticalAlignment="Center"/>
                 </StackPanel>
                 
-                <TextBlock Text="by Zano" 
+                    <TextBlock Grid.Column="1" 
+                               Text="by Zano" 
                            Foreground="{StaticResource TextMuted}"
-                           FontSize="9"
+                               FontSize="12"
                            VerticalAlignment="Center"/>
             </Grid>
         </Border>
         
         <!-- Now Playing Section -->
-        <Border Grid.Row="5" Style="{StaticResource CompactCard}" Padding="0" Margin="0">
+            <Border Grid.Row="5" Style="{StaticResource GlassCard}" Padding="0">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="80"/>
+                    <ColumnDefinition Width="200"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 
                 <!-- Album Art -->
-                <Border Grid.Column="0" Margin="10" CornerRadius="4" ClipToBounds="True">
+                <Border Grid.Column="0" Margin="8" CornerRadius="8" ClipToBounds="True">
                     <Grid>
-                    <Image x:Name="NowPlayingArt" Stretch="UniformToFill"/>
+                        <Image x:Name="NowPlayingArt" Stretch="UniformToFill" Width="100" Height="100"/>
                         <Border Background="#80000000" Visibility="{Binding ElementName=NowPlayingArt, Path=Source, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}">
                             <TextBlock Text="&#xE8D6;" 
                                      FontFamily="Segoe MDL2 Assets" 
-                                     FontSize="32" 
+                                     FontSize="20" 
                                      Foreground="White" 
                                      HorizontalAlignment="Center" 
                                      VerticalAlignment="Center"/>
@@ -617,7 +656,7 @@
                 </Border>
                 
                 <!-- Track Info and Controls -->
-                <Grid Grid.Column="1" Margin="10,0">
+                    <Grid Grid.Column="1" Margin="0,8,8,8">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -628,28 +667,28 @@
                     <TextBlock x:Name="NowPlayingTrack" 
                              Text="No track playing" 
                              Foreground="White" 
-                             FontSize="16" 
+                                 FontSize="14" 
                              FontWeight="SemiBold"
-                             Margin="0,0,0,4"/>
+                             Margin="0,0,0,2"/>
                     
                     <!-- Station Name -->
                     <StackPanel Grid.Row="1" Orientation="Horizontal">
                         <TextBlock Text="&#xE8D6;" 
                                  FontFamily="Segoe MDL2 Assets" 
-                                 FontSize="12" 
+                                 FontSize="9" 
                                  Foreground="#B3B3B3" 
                                  Margin="0,0,4,0"/>
                     <TextBlock x:Name="NowPlayingStation" 
                              Text="No station selected" 
                              Foreground="#B3B3B3" 
-                                 FontSize="14"/>
+                                 FontSize="11"/>
                     </StackPanel>
 
                     <!-- Playback Controls -->
                     <StackPanel Grid.Row="2" 
                               Orientation="Horizontal" 
                               VerticalAlignment="Bottom"
-                              Margin="0,8,0,0">
+                              Margin="0,2,0,0">
                         <Button x:Name="SkipBackButton"
                                 Click="SkipBackButton_Click"
                                 MouseEnter="SkipBackButton_MouseEnter"
@@ -665,7 +704,7 @@
                                 </Grid>
                             </Button.Content>
                             <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource CompactActionButton}">
+                                    <Style TargetType="Button" BasedOn="{StaticResource NeonButton}">
                                     <Setter Property="Background" Value="Transparent"/>
                                     <Setter Property="BorderThickness" Value="0"/>
                                     <Style.Triggers>
@@ -700,7 +739,7 @@
                                 </Grid>
                             </Button.Content>
                             <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource CompactActionButton}">
+                                    <Style TargetType="Button" BasedOn="{StaticResource NeonButton}">
                                     <Setter Property="Background" Value="Transparent"/>
                                     <Setter Property="BorderThickness" Value="0"/>
                                     <Style.Triggers>
@@ -729,7 +768,34 @@
                                 </Grid>
                             </Button.Content>
                             <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource CompactActionButton}">
+                                    <Style TargetType="Button" BasedOn="{StaticResource NeonButton}">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </Trigger>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Foreground" Value="#4B4B4B"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button x:Name="LyricsButton"
+                                Click="LyricsButton_Click"
+                                IsEnabled="{Binding IsMonitoring}"
+                                Margin="0,0,8,0"
+                                ToolTip="Show lyrics">
+                            <Button.Content>
+                                <Grid Width="24" Height="24">
+                                    <Path x:Name="LyricsIcon" 
+                                          Data="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" 
+                                          Fill="{StaticResource TextSecondary}"/>
+                                </Grid>
+                            </Button.Content>
+                            <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource NeonButton}">
                                     <Setter Property="Background" Value="Transparent"/>
                                     <Setter Property="BorderThickness" Value="0"/>
                                     <Style.Triggers>
@@ -747,5 +813,6 @@
                 </Grid>
             </Grid>
         </Border>
+        </Grid>
     </Grid>
 </Window>

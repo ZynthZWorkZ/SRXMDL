@@ -29,7 +29,7 @@
     },
     {
       "domain": "www.siriusxm.com",
-      "expirationDate": null,
+      "expirationDate": 0,
       "hostOnly": true,
       "httpOnly": false,
       "name": "suserid",
@@ -81,7 +81,7 @@
     },
     {
       "domain": ".siriusxm.com",
-      "expirationDate": 1757026523,
+      "expirationDate": 1757598083,
       "hostOnly": false,
       "httpOnly": false,
       "name": "AUTH_TOKEN",

@@ -21,6 +21,9 @@ using OpenQA.Selenium.Support.UI;
 using System.Net.Http;
 using System.Windows.Shapes;
 using System.Windows.Input;
+using SRXMDL.Artist;
+using SRXMDL.Download;
+using SRXMDL.Lyrics;
 
 namespace SRXMDL;
 
@@ -39,34 +42,29 @@ public partial class MainWindow : Window
     private string? lastTuneSourceUrl;
     private string? lastTuneSourcePayload;
     private string? lastTuneSourceAuthToken;
+    private ArtistStations? artistStations;
     public bool IsMonitoring
     {
         get => _isMonitoring;
         private set
         {
             _isMonitoring = value;
-            // Update CanPlay for all artist entries
-            foreach (var entry in artistEntries)
-            {
-                entry.CanPlay = value;
-            }
-            ArtistListView.Items.Refresh();
+            artistStations?.SetMonitoringStatus(value);
         }
     }
     private ObservableCollection<StreamEntry> streamEntries;
-    private ObservableCollection<ArtistEntry> artistEntries;
+    private ObservableCollection<Artist.ArtistEntry> artistEntries;
     private const string FAVORITES_FILE = "favorites.json";
 
     public MainWindow()
     {
         InitializeComponent();
         streamEntries = new ObservableCollection<StreamEntry>();
-        artistEntries = new ObservableCollection<ArtistEntry>();
+        artistEntries = new ObservableCollection<Artist.ArtistEntry>();
         StreamListView.ItemsSource = streamEntries;
         ArtistListView.ItemsSource = artistEntries;
         currentTrack = new NowPlaying();
         SetupLogging();
-        LoadFavorites();
         SetupNowPlayingTimer();
         SetupStationFeedbackWatcher();
     }
@@ -112,69 +110,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private void LoadFavorites()
-    {
-        try
-        {
-            if (File.Exists(FAVORITES_FILE))
-            {
-                var favorites = JsonSerializer.Deserialize<List<ArtistEntry>>(File.ReadAllText(FAVORITES_FILE));
-                if (favorites != null)
-                {
-                    foreach (var favorite in favorites)
-                    {
-                        favorite.IsFavorite = true;
-                        favorite.CanPlay = IsMonitoring;
-                        artistEntries.Add(favorite);
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error loading favorites");
-        }
-    }
-
-    private void SaveFavorites()
-    {
-        try
-        {
-            var favorites = artistEntries.Where(a => a.IsFavorite).ToList();
-            var json = JsonSerializer.Serialize(favorites, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(FAVORITES_FILE, json);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error saving favorites");
-        }
-    }
-
     private void ToggleFavorite_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button button && button.DataContext is ArtistEntry entry)
+        if (sender is Button button && button.DataContext is Artist.ArtistEntry entry)
         {
-            entry.IsFavorite = !entry.IsFavorite;
-            SaveFavorites();
-            
-            // Update button appearance
-            UpdateFavoriteButtonAppearance(button, entry.IsFavorite);
-        }
-    }
-
-    private void UpdateFavoriteButtonAppearance(Button button, bool isFavorite)
-    {
-        if (isFavorite)
-        {
-            button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B")); // Yellow
-            button.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B"));
-            button.Content = "★ Favorited";
-        }
-        else
-        {
-            button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#374151")); // Default
-            button.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#374151"));
-            button.Content = "☆ Favorite";
+            artistStations?.ToggleFavorite(button, entry);
         }
     }
 
@@ -365,6 +305,10 @@ public partial class MainWindow : Window
 
             // Initialize Chrome driver
             driver = new ChromeDriver(options);
+            
+            // Initialize ArtistStations
+            artistStations = new ArtistStations(driver, Dispatcher, artistEntries);
+            artistStations.ArtistListView = ArtistListView;
 
             // First navigate to the domain to set cookies
             await NavigateWithRetry(driver, "https://www.siriusxm.com");
@@ -617,6 +561,7 @@ public partial class MainWindow : Window
                                                 TrackName = "Unnamed MP4",
                                                 ArtistName = "Unknown"
                                             });
+                                            UpdateTotalCapturedCount();
                                         });
                                         continue;
                                     }
@@ -658,57 +603,61 @@ public partial class MainWindow : Window
                                         // Only proceed if we have a valid auth token
                                         if (!string.IsNullOrEmpty(feedbackAuthToken))
                                         {
-                                            // Ensure Stations directory exists
-                                            if (!Directory.Exists("Stations"))
+                                            // Ensure Artist directory exists
+                                            if (!Directory.Exists("Artist"))
                                             {
-                                                Directory.CreateDirectory("Stations");
+                                                Directory.CreateDirectory("Artist");
                                             }
 
-                                            // Ensure files exist in Stations directory
-                                            if (!File.Exists("Stations/artiststationtemp.txt"))
-                                            {
-                                                File.Create("Stations/artiststationtemp.txt").Dispose();
-                                            }
-                                            if (!File.Exists("Stations/station_feedback.json"))
-                                            {
-                                                File.Create("Stations/station_feedback.json").Dispose();
-                                            }
+                                            // Save the auth token to ArtistAuth.txt
+                                            await File.WriteAllTextAsync("Artist/ArtistAuth.txt", feedbackAuthToken);
+                                            Log.Information("Auth token saved to Artist/ArtistAuth.txt");
+                                        }
+                                    }
+                                    // Monitor artist station page API endpoint
+                                    else if (url.Contains("api.edge-gateway.siriusxm.com/page/v1/page/artist-station"))
+                                    {
+                                        Log.Information("Artist station page API request detected: {Url}", url);
 
-                                            // Save the auth token to artiststationtemp.txt (overwrite)
-                                            await File.WriteAllTextAsync("Stations/artiststationtemp.txt", feedbackAuthToken);
-                                            Log.Information("Auth token saved to Stations/artiststationtemp.txt");
+                                        // Get the auth token from the original request
+                                        var artistAuthToken = "";
 
-                                            // Get the response body
-                                            try
+                                        var artistRequestLog = logs.FirstOrDefault(l =>
+                                        {
+                                            var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
+                                            return entry?.Message?.Method == "Network.requestWillBeSent" &&
+                                                   entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
+                                        });
+
+                                        if (artistRequestLog != null)
+                                        {
+                                            var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(artistRequestLog.Message);
+                                            
+                                            if (requestEntry?.Message?.Params?.Request?.Headers != null)
                                             {
-                                                using (var httpClient = new HttpClient())
+                                                foreach (var header in requestEntry.Message.Params.Request.Headers)
                                                 {
-                                                    httpClient.DefaultRequestHeaders.Add("Authorization", feedbackAuthToken);
-                                                    httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-                                                    
-                                                    // Make the GET request
-                                                    var response = await httpClient.GetAsync(url);
-                                                    feedbackResponseBody = await response.Content.ReadAsStringAsync();
-
-                                                    // Only log if the response was successful
-                                                    if (response.IsSuccessStatusCode)
+                                                    if (header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
                                                     {
-                                                        // Format the JSON response with proper indentation
-                                                        var jsonElement = JsonSerializer.Deserialize<JsonElement>(feedbackResponseBody);
-                                                        var formattedJson = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions 
-                                                        { 
-                                                            WriteIndented = true 
-                                                        });
-
-                                                        // Save the formatted JSON to a .json file (overwrite)
-                                                        await File.WriteAllTextAsync("Stations/station_feedback.json", formattedJson);
+                                                        artistAuthToken = header.Value;
+                                                        break;
                                                     }
                                                 }
                                             }
-                                            catch (Exception ex)
+                                        }
+
+                                        // Only proceed if we have a valid auth token
+                                        if (!string.IsNullOrEmpty(artistAuthToken))
+                                        {
+                                            // Ensure Artist directory exists
+                                            if (!Directory.Exists("Artist"))
                                             {
-                                                Log.Error(ex, "Error getting response body");
+                                                Directory.CreateDirectory("Artist");
                                             }
+
+                                            // Save the auth token to ArtistAuth.txt
+                                            await File.WriteAllTextAsync("Artist/ArtistAuth.txt", artistAuthToken);
+                                            Log.Information("Auth token saved to Artist/ArtistAuth.txt");
                                         }
                                     }
                                     // Monitor tuneSource endpoint
@@ -927,6 +876,7 @@ public partial class MainWindow : Window
                                                                                                 TrackName = trackName,
                                                                                                 ArtistName = artistName
                                                                                             });
+                                                                                            UpdateTotalCapturedCount();
                                                                                         });
                                                                                         break;
                                                                                     }
@@ -1170,136 +1120,31 @@ public partial class MainWindow : Window
 
     private async Task ProcessArtistStationUrl(string url)
     {
-        try
-        {
-            // Wait for the page to load and find the title element
-            if (driver != null)
-            {
-                try
-                {
-                    // Wait for the title element to be present
-                    var wait = new OpenQA.Selenium.Support.UI.WebDriverWait(driver, TimeSpan.FromSeconds(10));
-                    var titleElement = wait.Until(d => d.FindElement(By.CssSelector("span[data-qa='content-page-title']")));
-                    
-                    var artistName = titleElement.Text.Trim();
-                    
-                    // Find the thumbnail image
-                    string thumbnailUrl = "";
-                    try
-                    {
-                        var thumbnailElement = driver.FindElement(By.CssSelector("span.image-module__image-inner___rZWHj img.image-module__image-image___WKoaX"));
-                        thumbnailUrl = thumbnailElement.GetAttribute("src");
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warning(ex, "Could not find thumbnail image for artist: {Artist}", artistName);
-                    }
-                    
-                    // Check if this artist is already in the list
-                    var existingArtist = artistEntries.FirstOrDefault(a => a.ArtistStationUrl == url);
-                    if (existingArtist == null)
-                    {
-                        await Dispatcher.InvokeAsync(() =>
-                        {
-                            artistEntries.Add(new ArtistEntry
-                            {
-                                Artist = artistName,
-                                ArtistStationUrl = url,
-                                ThumbnailUrl = thumbnailUrl,
-                                CanPlay = IsMonitoring
-                            });
-                        });
-                        Log.Information("Artist station detected: {Artist} - {Url} - Thumbnail: {Thumbnail}", artistName, url, thumbnailUrl);
-                    }
-                }
-                catch (OpenQA.Selenium.WebDriverTimeoutException)
-                {
-                    Log.Warning("Timeout waiting for artist title element on page: {Url}", url);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "Error finding artist title element on page: {Url}", url);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error processing artist station URL: {Url}", url);
-        }
+        await artistStations?.ProcessArtistStationUrl(url);
     }
 
     private async void PlayArtistStation_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button button && button.DataContext is ArtistEntry entry)
+        if (sender is Button button && button.DataContext is Artist.ArtistEntry entry)
         {
-            try
-            {
-                if (driver != null)
-                {
-                    // If we're already on the correct page, just click play
-                    if (driver.Url == entry.ArtistStationUrl)
-                    {
-                        await ClickPlayButton(entry.Artist);
-                        return;
-                    }
-
-                    // Navigate to the artist station URL
-                    driver.Navigate().GoToUrl(entry.ArtistStationUrl);
-                    
-                    // Wait for the play button to be present and click it
-                    await ClickPlayButton(entry.Artist);
-                }
-                else
-                {
-                    StatusText.Text = "Browser not initialized";
-                    Log.Warning("Attempted to play artist station but browser was not initialized");
-                }
-            }
-            catch (Exception ex)
-            {
-                StatusText.Text = "Error playing station";
-                Log.Error(ex, "Error playing artist station: {Artist}", entry.Artist);
-            }
-        }
-    }
-
-    private async Task ClickPlayButton(string artistName)
-    {
-        try
-        {
-            var wait = new OpenQA.Selenium.Support.UI.WebDriverWait(driver, TimeSpan.FromSeconds(5));
-            
-            // Try to find the play button with the specific artist name first
-            try
-            {
-                var playButton = wait.Until(d => d.FindElement(By.CssSelector($"button[aria-label='Play {artistName} Station']")));
-                ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView(true);", playButton);
-                playButton.Click();
-            }
-            catch (OpenQA.Selenium.WebDriverTimeoutException)
-            {
-                // If specific button not found, try the generic play button
-                Log.Warning("Specific play button not found for {Artist}, trying generic play button", artistName);
-                var playButton = wait.Until(d => d.FindElement(By.CssSelector("button[aria-label*='Play']")));
-                ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView(true);", playButton);
-                playButton.Click();
-            }
-            
-            StatusText.Text = $"Playing {artistName} station...";
-            Log.Information("Started playing artist station: {Artist}", artistName);
-        }
-        catch (Exception ex)
-        {
-            throw new Exception($"Failed to click play button: {ex.Message}", ex);
+            await artistStations?.PlayArtistStation(entry, status => StatusText.Text = status);
         }
     }
 
     private void ClearStreams_Click(object sender, RoutedEventArgs e)
     {
         streamEntries.Clear();
-        TotalCapturedCount.Text = "0";
+        UpdateTotalCapturedCount();
         StatusText.Text = "Stream activity cleared";
         Log.Information("Stream activity cleared");
+    }
+
+    private void UpdateTotalCapturedCount()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            TotalCapturedCount.Text = streamEntries.Count.ToString();
+        });
     }
 
     private void SetupStationFeedbackWatcher()
@@ -1430,6 +1275,7 @@ public partial class MainWindow : Window
                                                             TrackName = trackName,
                                                             ArtistName = artistName
                                                         });
+                                                        UpdateTotalCapturedCount();
                                                     });
                                                     break;
                                                 }
@@ -1664,6 +1510,197 @@ public partial class MainWindow : Window
             StatusText.Text = "Error skipping track";
         }
     }
+
+    private async void ArtistInfoButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (sender is Button button && button.DataContext is Artist.ArtistEntry entry)
+            {
+                // Extract artist ID from the URL
+                var artistId = entry.ArtistStationUrl.Split('/').Last();
+                
+                // Read the bearer token from ArtistAuth.txt
+                string bearerToken = "";
+                if (File.Exists("Artist/ArtistAuth.txt"))
+                {
+                    bearerToken = await File.ReadAllTextAsync("Artist/ArtistAuth.txt");
+                }
+                else
+                {
+                    StatusText.Text = "No auth token found";
+                    return;
+                }
+
+                // Make the API call
+                using (var httpClient = new HttpClient())
+                {
+                    httpClient.DefaultRequestHeaders.Add("Authorization", bearerToken);
+                    httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+
+                    var response = await httpClient.GetAsync($"https://api.edge-gateway.siriusxm.com/page/v1/page/artist-station/{artistId}");
+                    var responseBody = await response.Content.ReadAsStringAsync();
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        // Format the JSON response with proper indentation
+                        var jsonElement = JsonSerializer.Deserialize<JsonElement>(responseBody);
+                        var formattedJson = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions 
+                        { 
+                            WriteIndented = true 
+                        });
+
+                        // Save the formatted JSON to ArtistInfo.json
+                        await File.WriteAllTextAsync("Artist/ArtistInfo.json", formattedJson);
+                        StatusText.Text = "Artist info saved successfully";
+                        Log.Information("Artist info saved to Artist/ArtistInfo.json");
+
+                        // Show the ArtistInfo window with the artist entry
+                        var artistInfoWindow = new Artist.Artistinfo(entry);
+                        artistInfoWindow.Owner = this;
+                        artistInfoWindow.Show();
+                    }
+                    else
+                    {
+                        StatusText.Text = "Failed to fetch artist info";
+                        Log.Error("Failed to fetch artist info. Status code: {StatusCode}", response.StatusCode);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Error fetching artist info";
+            Log.Error(ex, "Error fetching artist info");
+        }
+    }
+
+    private async void LyricsButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var lyricsWindow = LyricsWindow.GetInstance();
+            lyricsWindow.Owner = this;
+            
+            if (currentTrack != null)
+            {
+                lyricsWindow.SetTrackInfo(
+                    currentTrack.TrackName ?? "Unknown Track",
+                    currentTrack.StationName ?? "Unknown Station",
+                    currentTrack.AlbumArtUrl
+                );
+
+                // Show loading state
+                lyricsWindow.SetLyrics("Fetching lyrics...");
+                lyricsWindow.Show();
+                lyricsWindow.Activate();
+
+                // Delete existing lyrics.txt if it exists
+                const string lyricsFilePath = "lyrics.txt";
+                if (File.Exists(lyricsFilePath))
+                {
+                    try
+                    {
+                        File.Delete(lyricsFilePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning($"Could not delete existing lyrics.txt: {ex.Message}");
+                    }
+                }
+
+                // Construct the search query
+                string searchQuery = currentTrack.TrackName ?? "Unknown Track";
+                
+                // Try to extract artist name from track name (format: "Artist - Title")
+                string[] parts = searchQuery.Split(new[] { " - " }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2)
+                {
+                    // If we have both artist and title, use them directly
+                    searchQuery = searchQuery; // Already in correct format
+                }
+                else
+                {
+                    // If we don't have the format, just use the track name
+                    searchQuery = currentTrack.TrackName ?? "Unknown Track";
+                }
+
+                // Run LyricsFetch.exe
+                var startInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "LyricsFetch.exe",
+                    Arguments = $"-- -S \"{searchQuery}\" -o",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+
+                using (var process = new System.Diagnostics.Process { StartInfo = startInfo })
+                {
+                    process.Start();
+                    
+                    // Wait for lyrics.txt to be created
+                    int attempts = 0;
+                    const int maxAttempts = 30; // 30 seconds timeout
+                    
+                    while (!File.Exists(lyricsFilePath) && attempts < maxAttempts)
+                    {
+                        await Task.Delay(1000); // Wait 1 second between checks
+                        attempts++;
+                    }
+
+                    if (File.Exists(lyricsFilePath))
+                    {
+                        // Wait a bit more to ensure file is completely written
+                        await Task.Delay(500);
+                        
+                        string lyrics = await File.ReadAllTextAsync(lyricsFilePath);
+                        lyricsWindow.SetLyrics(lyrics);
+                    }
+                    else
+                    {
+                        lyricsWindow.SetLyrics("No lyrics found (timeout waiting for lyrics.txt)");
+                    }
+                }
+            }
+            else
+            {
+                lyricsWindow.SetTrackInfo("No Track", "No Station");
+                lyricsWindow.SetLyrics("No track currently playing");
+                lyricsWindow.Show();
+                lyricsWindow.Activate();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error opening lyrics window");
+            StatusText.Text = "Error opening lyrics window";
+        }
+    }
+
+    private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.LeftButton == MouseButtonState.Pressed)
+        {
+            DragMove();
+        }
+    }
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState.Minimized;
+    }
+
+    private void MaximizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
+    }
 }
 
 // Classes to deserialize the cookie JSON
@@ -1766,15 +1803,6 @@ public class StreamEntry
     public string TrackName { get; set; }
     public string ArtistName { get; set; }
     public bool CanPlay => StreamType == "mp4" || StreamType == "mp3" || StreamType == "m3u8";
-}
-
-public class ArtistEntry
-{
-    public string Artist { get; set; }
-    public string ArtistStationUrl { get; set; }
-    public string ThumbnailUrl { get; set; }
-    public bool IsFavorite { get; set; }
-    public bool CanPlay { get; set; }
 }
 
 public class NowPlaying
