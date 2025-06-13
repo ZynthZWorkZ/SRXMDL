@@ -16,7 +16,6 @@ using System.Linq;
 using System.Windows.Media.Imaging;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Media.Animation;
 using OpenQA.Selenium.Support.UI;
 using System.Net.Http;
 using System.Windows.Shapes;
@@ -62,7 +61,7 @@ public partial class MainWindow : Window
         streamEntries = new ObservableCollection<StreamEntry>();
         artistEntries = new ObservableCollection<Artist.ArtistEntry>();
         StreamListView.ItemsSource = streamEntries;
-        ArtistListView.ItemsSource = artistEntries;
+        ((ListView)FindName("ArtistListView")).ItemsSource = artistEntries;
         currentTrack = new NowPlaying();
         SetupLogging();
         SetupNowPlayingTimer();
@@ -559,7 +558,8 @@ public partial class MainWindow : Window
                                                 StreamType = "mp4",
                                                 Url = url,
                                                 TrackName = "Unnamed MP4",
-                                                ArtistName = "Unknown"
+                                                ArtistName = "Unknown",
+                                                PreferredImageUrl = null
                                             });
                                             UpdateTotalCapturedCount();
                                         });
@@ -868,13 +868,32 @@ public partial class MainWindow : Window
                                                                                         }
                                                                                         await Dispatcher.InvokeAsync(() =>
                                                                                         {
+                                                                                            string preferredImageUrl = null;
+                                                                                            if (stream.TryGetProperty("metadata", out var metadata) &&
+                                                                                                metadata.TryGetProperty("artist", out var artist) &&
+                                                                                                artist.TryGetProperty("items", out var items) &&
+                                                                                                items.ValueKind == JsonValueKind.Array &&
+                                                                                                items.GetArrayLength() > 0)
+                                                                                            {
+                                                                                                var firstItem = items[0];
+                                                                                                if (firstItem.TryGetProperty("images", out var images) &&
+                                                                                                    images.TryGetProperty("tile", out var tile) &&
+                                                                                                    tile.TryGetProperty("aspect_1x1", out var aspect) &&
+                                                                                                    aspect.TryGetProperty("preferredImage", out var preferredImage) &&
+                                                                                                    preferredImage.TryGetProperty("url", out var imageUrl))
+                                                                                                {
+                                                                                                    preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
+                                                                                                }
+                                                                                            }
+
                                                                                             streamEntries.Add(new StreamEntry
                                                                                             {
                                                                                                 Timestamp = DateTime.Now.ToString("HH:mm:ss"),
                                                                                                 StreamType = "mp4",
                                                                                                 Url = streamUrl,
                                                                                                 TrackName = trackName,
-                                                                                                ArtistName = artistName
+                                                                                                ArtistName = artistName,
+                                                                                                PreferredImageUrl = preferredImageUrl
                                                                                             });
                                                                                             UpdateTotalCapturedCount();
                                                                                         });
@@ -1267,13 +1286,32 @@ public partial class MainWindow : Window
                                                     }
                                                     await Dispatcher.InvokeAsync(() =>
                                                     {
+                                                        string preferredImageUrl = null;
+                                                        if (stream.TryGetProperty("metadata", out var metadata) &&
+                                                            metadata.TryGetProperty("artist", out var artist) &&
+                                                            artist.TryGetProperty("items", out var items) &&
+                                                            items.ValueKind == JsonValueKind.Array &&
+                                                            items.GetArrayLength() > 0)
+                                                        {
+                                                            var firstItem = items[0];
+                                                            if (firstItem.TryGetProperty("images", out var images) &&
+                                                                images.TryGetProperty("tile", out var tile) &&
+                                                                tile.TryGetProperty("aspect_1x1", out var aspect) &&
+                                                                aspect.TryGetProperty("preferredImage", out var preferredImage) &&
+                                                                preferredImage.TryGetProperty("url", out var imageUrl))
+                                                            {
+                                                                preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
+                                                            }
+                                                        }
+
                                                         streamEntries.Add(new StreamEntry
                                                         {
                                                             Timestamp = DateTime.Now.ToString("HH:mm:ss"),
                                                             StreamType = "mp4",
                                                             Url = streamUrl,
                                                             TrackName = trackName,
-                                                            ArtistName = artistName
+                                                            ArtistName = artistName,
+                                                            PreferredImageUrl = preferredImageUrl
                                                         });
                                                         UpdateTotalCapturedCount();
                                                     });
@@ -1802,7 +1840,47 @@ public class StreamEntry
     public string Url { get; set; }
     public string TrackName { get; set; }
     public string ArtistName { get; set; }
+    public string PreferredImageUrl { get; set; }
     public bool CanPlay => StreamType == "mp4" || StreamType == "mp3" || StreamType == "m3u8";
+
+    public static string DecodeImageUrl(string imagePath)
+    {
+        try
+        {
+            var jsonObject = new
+            {
+                key = imagePath,
+                edits = new object[]
+                {
+                    new
+                    {
+                        format = new
+                        {
+                            type = "jpeg"
+                        }
+                    },
+                    new
+                    {
+                        resize = new
+                        {
+                            width = 1080,
+                            height = 1080
+                        }
+                    }
+                }
+            };
+
+            string jsonString = JsonSerializer.Serialize(jsonObject);
+            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            string base64String = Convert.ToBase64String(bytes);
+            return "https://imgsrv-sxm-prod-device.streaming.siriusxm.com/" + base64String;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error decoding image URL for path: {Path}", imagePath);
+            return null;
+        }
+    }
 }
 
 public class NowPlaying

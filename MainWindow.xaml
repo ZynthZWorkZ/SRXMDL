@@ -198,6 +198,15 @@
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListView">
+                        <ScrollViewer x:Name="ScrollViewer" Padding="{TemplateBinding Padding}">
+                            <ItemsPresenter />
+                        </ScrollViewer>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- Futuristic ListViewItem -->
@@ -277,6 +286,96 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Icon Button Style -->
+        <Style x:Key="IconButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="50"/>
+            <Setter Property="Height" Value="50"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <ContentPresenter/>
+                            <Border x:Name="GlowBorder" 
+                                    Background="Transparent" 
+                                    CornerRadius="25"
+                                    Opacity="0">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="#00FFFF" 
+                                                    Opacity="0.8" 
+                                                    BlurRadius="15" 
+                                                    ShadowDepth="0"/>
+                                </Border.Effect>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="GlowBorder" Property="Opacity" Value="1"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Play Button Style -->
+        <Style x:Key="PlayButtonStyle" TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
+            <Setter Property="Foreground" Value="#39FF14"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <ContentPresenter/>
+                            <Border x:Name="GlowBorder" 
+                                    Background="Transparent" 
+                                    CornerRadius="25"
+                                    Opacity="0">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="#39FF14" 
+                                                    Opacity="0.8" 
+                                                    BlurRadius="15" 
+                                                    ShadowDepth="0"/>
+                                </Border.Effect>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="GlowBorder" Property="Opacity" Value="1"/>
+                                <Setter Property="Foreground" Value="#00FF00"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#4B4B4B"/>
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Favorite Button Style -->
+        <Style x:Key="FavoriteButtonStyle" TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
+            <Setter Property="Foreground" Value="#FF1493"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#FF69B4"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Info Button Style -->
+        <Style x:Key="InfoButtonStyle" TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
+            <Setter Property="Foreground" Value="#667EEA"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#7C8EF7"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -314,13 +413,16 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
 
             <!-- Custom Title Bar -->
-            <Border Grid.Row="0" 
+            <Border Grid.Row="0" Grid.ColumnSpan="2" 
                     Background="{StaticResource CardGradient}" 
                     CornerRadius="20,20,0,0" 
                     Height="50" 
@@ -359,7 +461,7 @@
             </Border>
 
             <!-- Hero Header -->
-            <Border Grid.Row="1" Style="{StaticResource GlassCard}" Padding="15,8" Margin="0,8">
+            <Border Grid.Row="1" Grid.ColumnSpan="2" Style="{StaticResource GlassCard}" Padding="15,8" Margin="0,8">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -396,7 +498,7 @@
         </Border>
 
             <!-- Control Panel -->
-            <Border Grid.Row="2" Style="{StaticResource GlassCard}" Padding="40,25" Margin="0,0,0,20">
+            <Border Grid.Row="2" Grid.ColumnSpan="2" Style="{StaticResource GlassCard}" Padding="40,25" Margin="0,0,0,20">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -429,7 +531,7 @@
         </Border>
 
             <!-- Stream Data Table -->
-            <Border Grid.Row="3" Style="{StaticResource GlassCard}" Padding="0" Margin="0,0,0,20">
+            <Border Grid.Row="3" Grid.Column="0" Style="{StaticResource GlassCard}" Padding="0" Margin="0,0,10,20">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -479,6 +581,29 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
+                                <GridViewColumn Header="" Width="80">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Border Width="40" Height="40" CornerRadius="8" ClipToBounds="True">
+                                                <Image Source="{Binding PreferredImageUrl}" 
+                                                       Stretch="UniformToFill"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                            </Border>
+                                            <Border Width="40" Height="40" CornerRadius="8" 
+                                                    Background="#80000000" 
+                                                    Visibility="{Binding PreferredImageUrl, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}">
+                                                <TextBlock Text="&#xE8D6;" 
+                                                         FontFamily="Segoe MDL2 Assets" 
+                                                         FontSize="16" 
+                                                         Foreground="White" 
+                                                         HorizontalAlignment="Center" 
+                                                         VerticalAlignment="Center"/>
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
                                 <GridViewColumn Header="🎶 TRACK INFO" Width="400">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
@@ -518,7 +643,7 @@
         </Border>
 
         <!-- Artist Section -->
-            <Border Grid.Row="4" Style="{StaticResource GlassCard}" Padding="0" Margin="0,0,0,20">
+            <Border Grid.Row="3" Grid.Column="1" Style="{StaticResource GlassCard}" Padding="0" Margin="10,0,0,20">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -532,108 +657,112 @@
                                    FontSize="20" FontWeight="Bold"/>
                 </Border>
                 
-                    <ListView Grid.Row="1" x:Name="ArtistListView" 
-                              Style="{StaticResource ModernListView}"
-                              ItemContainerStyle="{StaticResource FuturisticListViewItem}"
-                              Padding="15">
-                    <ListView.View>
-                            <GridView ColumnHeaderContainerStyle="{StaticResource FuturisticGridViewColumnHeader}">
-                            <GridViewColumn Header="" Width="80">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                            <Border Width="40" Height="40" CornerRadius="8" ClipToBounds="True">
-                                            <Image Source="{Binding ThumbnailUrl}" 
-                                                   Stretch="UniformToFill"
-                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
-                                        </Border>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                            <GridViewColumn Header="ARTIST" Width="250">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding Artist}" 
-                                                   Foreground="{StaticResource TextPrimary}"
-                                                       FontSize="14" FontWeight="SemiBold"/>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                            <GridViewColumn Header="ARTIST STATION URL" Width="450">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding ArtistStationUrl}" 
-                                                   Foreground="{StaticResource TextSecondary}"
-                                                       FontSize="12"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   ToolTip="{Binding ArtistStationUrl}"/>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                            <GridViewColumn Header="ACTIONS" Width="200">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Orientation="Horizontal">
-                                                <Button Content="▶️" Click="PlayArtistStation_Click" 
-                                                        Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonGreen}"
-                                                        ToolTip="Play Station" Margin="0,0,8,0"
-                                                    IsEnabled="{Binding CanPlay}"/>
-                                                <Button Content="⭐" Click="ToggleFavorite_Click" 
-                                                        ToolTip="Toggle Favorite" Margin="0,0,8,0">
-                                                <Button.Style>
-                                                        <Style TargetType="Button" BasedOn="{StaticResource NeonButton}">
-                                                            <Setter Property="BorderBrush" Value="{StaticResource NeonCyan}"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsFavorite}" Value="True">
-                                                                    <Setter Property="BorderBrush" Value="{StaticResource NeonPink}"/>
-                                                                    <Setter Property="Content" Value="★"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Button.Style>
-                                            </Button>
-                                                <Button Content="ℹ️" Click="ArtistInfoButton_Click"
-                                                        Style="{StaticResource GradientButton}"
-                                                        ToolTip="Artist Info"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                        </GridView>
-                    </ListView.View>
-                </ListView>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ListView x:Name="ArtistListView" 
+                                 Style="{StaticResource ModernListView}"
+                                 Margin="15">
+                            <ListView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ListView.ItemsPanel>
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Width="280" Height="320" Margin="8" 
+                                            Background="{StaticResource CardGradient}" 
+                                            CornerRadius="15">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="200"/>
+                                                <RowDefinition Height="*"/>
+                                            </Grid.RowDefinitions>
+
+                                            <!-- Artist Image -->
+                                            <Border Grid.Row="0" CornerRadius="15,15,0,0" ClipToBounds="True">
+                                                <Grid>
+                                                    <Image Source="{Binding ThumbnailUrl}" 
+                                                           Stretch="UniformToFill"
+                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                    <Border Background="#80000000" 
+                                                            Visibility="{Binding ThumbnailUrl, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}">
+                                                        <TextBlock Text="&#xE8D6;" 
+                                                                 FontFamily="Segoe MDL2 Assets" 
+                                                                 FontSize="40" 
+                                                                 Foreground="White" 
+                                                                 HorizontalAlignment="Center" 
+                                                                 VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+
+                                            <!-- Artist Info and Controls -->
+                                            <Grid Grid.Row="1" Margin="15">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="*"/>
+                                                </Grid.RowDefinitions>
+
+                                                <!-- Artist Name -->
+                                                <TextBlock Text="{Binding Artist}" 
+                                                           Foreground="{StaticResource TextPrimary}"
+                                                           FontSize="16" 
+                                                           FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Margin="0,0,0,5"/>
+
+                                                <!-- Artist Station URL -->
+                                                <TextBlock Grid.Row="1" 
+                                                           Text="{Binding ArtistStationUrl}" 
+                                                           Foreground="{StaticResource TextSecondary}"
+                                                           FontSize="11"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding ArtistStationUrl}"
+                                                           Margin="0,0,0,10"/>
+
+                                                <!-- Action Buttons -->
+                                                <StackPanel Grid.Row="2" 
+                                                          Orientation="Horizontal" 
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Bottom">
+                                                    <Button Content="&#x25B6;" 
+                                                            Click="PlayArtistStation_Click" 
+                                                            ToolTip="Play Station" 
+                                                            Margin="0,0,12,0"
+                                                            IsEnabled="True"
+                                                            Style="{StaticResource PlayButtonStyle}"/>
+                                                    <Button Click="ToggleFavorite_Click" 
+                                                            ToolTip="Toggle Favorite" 
+                                                            Margin="0,0,12,0">
+                                                        <Button.Style>
+                                                            <Style TargetType="Button" BasedOn="{StaticResource FavoriteButtonStyle}">
+                                                                <Setter Property="Content" Value="&#x2B50;"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                                                                        <Setter Property="Content" Value="&#x2605;"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Button.Style>
+                                                    </Button>
+                                                    <Button Content="&#x2139;" 
+                                                            Click="ArtistInfoButton_Click"
+                                                            ToolTip="Artist Info"
+                                                            Margin="0,0,12,0"
+                                                            Style="{StaticResource InfoButtonStyle}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </ScrollViewer>
             </Grid>
         </Border>
 
-            <!-- Status Footer -->
-            <Border Grid.Row="6" Background="Transparent" Padding="20,10" Margin="0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border Background="{StaticResource AccentGradient}" CornerRadius="8" Padding="8,4" Margin="0,0,12,0">
-                            <TextBlock Text="READY" 
-                                       Foreground="White" FontSize="10" FontWeight="Bold"/>
-                    </Border>
-                    <TextBlock x:Name="StatusText" 
-                               Text="Monitoring service ready" 
-                               Foreground="{StaticResource TextSecondary}"
-                                   FontSize="12"
-                               VerticalAlignment="Center"/>
-                </StackPanel>
-                
-                    <TextBlock Grid.Column="1" 
-                               Text="by Zano" 
-                           Foreground="{StaticResource TextMuted}"
-                               FontSize="12"
-                           VerticalAlignment="Center"/>
-            </Grid>
-        </Border>
-        
-        <!-- Now Playing Section -->
-            <Border Grid.Row="5" Style="{StaticResource GlassCard}" Padding="0">
+            <!-- Now Playing Section -->
+            <Border Grid.Row="4" Grid.ColumnSpan="2" Style="{StaticResource GlassCard}" Padding="0">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="200"/>
@@ -811,6 +940,34 @@
                         </Button>
                 </StackPanel>
                 </Grid>
+            </Grid>
+        </Border>
+
+            <!-- Status Footer -->
+            <Border Grid.Row="5" Grid.ColumnSpan="2" Background="Transparent" Padding="20,10" Margin="0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border Background="{StaticResource AccentGradient}" CornerRadius="8" Padding="8,4" Margin="0,0,12,0">
+                            <TextBlock Text="READY" 
+                                       Foreground="White" FontSize="10" FontWeight="Bold"/>
+                    </Border>
+                    <TextBlock x:Name="StatusText" 
+                               Text="Monitoring service ready" 
+                               Foreground="{StaticResource TextSecondary}"
+                                   FontSize="12"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+                
+                    <TextBlock Grid.Column="1" 
+                               Text="by Zano" 
+                           Foreground="{StaticResource TextMuted}"
+                               FontSize="12"
+                           VerticalAlignment="Center"/>
             </Grid>
         </Border>
         </Grid>

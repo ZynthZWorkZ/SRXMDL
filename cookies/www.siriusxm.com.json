@@ -81,7 +81,7 @@
     },
     {
       "domain": ".siriusxm.com",
-      "expirationDate": 1757598083,
+      "expirationDate": 1757629243,
       "hostOnly": false,
       "httpOnly": false,
       "name": "AUTH_TOKEN",

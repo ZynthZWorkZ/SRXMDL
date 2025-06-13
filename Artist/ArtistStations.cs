@@ -79,7 +79,13 @@ public class ArtistStations
             // Ensure the Artist directory exists
             Directory.CreateDirectory("Artist");
             
-            var favorites = _artistEntries.Where(a => a.IsFavorite).ToList();
+            // Get unique favorites by URL to prevent duplicates
+            var favorites = _artistEntries
+                .Where(a => a.IsFavorite)
+                .GroupBy(a => a.ArtistStationUrl)
+                .Select(g => g.First())
+                .ToList();
+                
             var json = JsonSerializer.Serialize(favorites, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(_favoritesFile, json);
         }
@@ -136,7 +142,11 @@ public class ArtistStations
                         Log.Warning(ex, "Could not find thumbnail image for artist: {Artist}", artistName);
                     }
                     
-                    var existingArtist = _artistEntries.FirstOrDefault(a => a.ArtistStationUrl == url);
+                    // Check for existing artist by both URL and name to prevent duplicates
+                    var existingArtist = _artistEntries.FirstOrDefault(a => 
+                        a.ArtistStationUrl == url || 
+                        a.Artist.Equals(artistName, StringComparison.OrdinalIgnoreCase));
+                        
                     if (existingArtist == null)
                     {
                         await _dispatcher.InvokeAsync(() =>
@@ -150,6 +160,10 @@ public class ArtistStations
                             });
                         });
                         Log.Information("Artist station detected: {Artist} - {Url} - Thumbnail: {Thumbnail}", artistName, url, thumbnailUrl);
+                    }
+                    else
+                    {
+                        Log.Information("Duplicate artist station skipped: {Artist} - {Url}", artistName, url);
                     }
                 }
                 catch (OpenQA.Selenium.WebDriverTimeoutException)
