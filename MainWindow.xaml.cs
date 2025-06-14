@@ -730,6 +730,83 @@ public partial class MainWindow : Window
                                             }
                                         }
                                     }
+                                    // Monitor Conviva WSG endpoint
+                                    else if (url.EndsWith("conviva.com/0/wsg", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        Log.Information("Conviva WSG request detected: {Url}", url);
+
+                                        // Get the payload from the original request
+                                        var wsgPayload = "";
+
+                                        var wsgRequestLog = logs.FirstOrDefault(l =>
+                                        {
+                                            var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
+                                            return entry?.Message?.Method == "Network.requestWillBeSent" &&
+                                                   entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
+                                        });
+
+                                        if (wsgRequestLog != null)
+                                        {
+                                            var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(wsgRequestLog.Message);
+                                            wsgPayload = requestEntry?.Message?.Params?.Request?.PostData;
+                                        }
+
+                                        // Only proceed if we have a valid payload
+                                        if (!string.IsNullOrEmpty(wsgPayload))
+                                        {
+                                            try
+                                            {
+                                                // Parse the payload to check if it's a valid JSON
+                                                var jsonElement = JsonSerializer.Deserialize<JsonElement>(wsgPayload);
+                                                
+                                                // Check if the payload contains the required fwv value
+                                                bool hasRequiredFwv = false;
+                                                
+                                                // Check in pm object
+                                                if (jsonElement.TryGetProperty("pm", out var pmElement) && 
+                                                    pmElement.TryGetProperty("fwv", out var pmFwvElement) &&
+                                                    pmFwvElement.GetString() == "howler - 2.2.4")
+                                                {
+                                                    hasRequiredFwv = true;
+                                                }
+                                                
+                                                // Check in root object
+                                                if (!hasRequiredFwv && 
+                                                    jsonElement.TryGetProperty("fwv", out var rootFwvElement) &&
+                                                    rootFwvElement.GetString() == "howler - 2.2.4")
+                                                {
+                                                    hasRequiredFwv = true;
+                                                }
+
+                                                // Only save if the required fwv value is found
+                                                if (hasRequiredFwv)
+                                                {
+                                                    // Ensure Stations directory exists
+                                                    if (!Directory.Exists("Stations"))
+                                                    {
+                                                        Directory.CreateDirectory("Stations");
+                                                    }
+
+                                                    var formattedJson = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions 
+                                                    { 
+                                                        WriteIndented = true 
+                                                    });
+
+                                                    // Save the payload to Now.json
+                                                    await File.WriteAllTextAsync("Stations/Now.json", formattedJson);
+                                                    Log.Information("WSG payload with required fwv saved to Stations/Now.json");
+                                                }
+                                                else
+                                                {
+                                                    Log.Debug("Skipping WSG payload - does not contain required fwv value");
+                                                }
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                Log.Error(ex, "Error processing WSG payload");
+                                            }
+                                        }
+                                    }
                                     // Monitor peek endpoint
                                     else if (url.Contains("api.edge-gateway.siriusxm.com/playback/play/v1/peek"))
                                     {
