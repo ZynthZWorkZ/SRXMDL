@@ -778,8 +778,23 @@ public partial class MainWindow : Window
                                                     hasRequiredFwv = true;
                                                 }
 
-                                                // Only save if the required fwv value is found
-                                                if (hasRequiredFwv)
+                                                // Check if payload contains new/old objects in evs array
+                                                bool hasNewOldObjects = false;
+                                                if (jsonElement.TryGetProperty("evs", out var evsElement) && 
+                                                    evsElement.ValueKind == JsonValueKind.Array)
+                                                {
+                                                    foreach (var ev in evsElement.EnumerateArray())
+                                                    {
+                                                        if (ev.TryGetProperty("new", out _) || ev.TryGetProperty("old", out _))
+                                                        {
+                                                            hasNewOldObjects = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+
+                                                // Only save if the required fwv value is found and no new/old objects exist
+                                                if (hasRequiredFwv && !hasNewOldObjects)
                                                 {
                                                     // Ensure Stations directory exists
                                                     if (!Directory.Exists("Stations"))
@@ -795,10 +810,95 @@ public partial class MainWindow : Window
                                                     // Save the payload to Now.json
                                                     await File.WriteAllTextAsync("Stations/Now.json", formattedJson);
                                                     Log.Information("WSG payload with required fwv saved to Stations/Now.json");
+
+                                                    // Extract track information
+                                                    string artistName = "";
+                                                    string trackName = "";
+                                                    string streamUrl = "";
+
+                                                    // Get artist name - check both root level and tags
+                                                    if (jsonElement.TryGetProperty("artistName", out var artistElement))
+                                                    {
+                                                        artistName = artistElement.GetString() ?? "";
+                                                    }
+                                                    else if (jsonElement.TryGetProperty("tags", out var tagsElement) && 
+                                                             tagsElement.TryGetProperty("artistName", out var tagsArtistElement))
+                                                    {
+                                                        artistName = tagsArtistElement.GetString() ?? "";
+                                                    }
+
+                                                    // Get track name (an)
+                                                    if (jsonElement.TryGetProperty("an", out var trackElement))
+                                                    {
+                                                        trackName = trackElement.GetString() ?? "";
+                                                    }
+
+                                                    // Get stream URL
+                                                    if (jsonElement.TryGetProperty("url", out var urlElement))
+                                                    {
+                                                        streamUrl = urlElement.GetString() ?? "";
+                                                    }
+
+                                                    // Only proceed if we have a valid URL
+                                                    if (!string.IsNullOrEmpty(streamUrl))
+                                                    {
+                                                        await Dispatcher.InvokeAsync(() =>
+                                                        {
+                                                            // Check if this URL already exists in the stream entries
+                                                            var existingEntry = streamEntries.FirstOrDefault(e => e.Url == streamUrl);
+                                                            
+                                                            if (existingEntry != null)
+                                                            {
+                                                                // If the existing entry is unnamed, update it with the new information
+                                                                if (existingEntry.TrackName == "Unnamed MP4")
+                                                                {
+                                                                    existingEntry.TrackName = trackName;
+                                                                    existingEntry.ArtistName = artistName;
+                                                                    Log.Information("Updated unnamed stream entry with track info: {Track} - {Artist}", trackName, artistName);
+                                                                }
+                                                            }
+                                                            else
+                                                            {
+                                                                // Check if this track/artist combination already exists
+                                                                var duplicateEntry = streamEntries.FirstOrDefault(e => 
+                                                                    e.TrackName == trackName && 
+                                                                    e.ArtistName == artistName && 
+                                                                    !string.IsNullOrEmpty(trackName) && 
+                                                                    !string.IsNullOrEmpty(artistName));
+
+                                                                if (duplicateEntry == null)
+                                                                {
+                                                                    // Add new entry only if it's not a duplicate
+                                                                    streamEntries.Add(new StreamEntry
+                                                                    {
+                                                                        Timestamp = DateTime.Now.ToString("HH:mm:ss"),
+                                                                        StreamType = "mp4",
+                                                                        Url = streamUrl,
+                                                                        TrackName = trackName,
+                                                                        ArtistName = artistName,
+                                                                        PreferredImageUrl = null
+                                                                    });
+                                                                    Log.Information("Added new stream entry: {Track} - {Artist}", trackName, artistName);
+                                                                }
+                                                                else
+                                                                {
+                                                                    Log.Debug("Skipping duplicate stream entry: {Track} - {Artist}", trackName, artistName);
+                                                                }
+                                                            }
+                                                            UpdateTotalCapturedCount();
+                                                        });
+                                                    }
                                                 }
                                                 else
                                                 {
-                                                    Log.Debug("Skipping WSG payload - does not contain required fwv value");
+                                                    if (!hasRequiredFwv)
+                                                    {
+                                                        Log.Debug("Skipping WSG payload - does not contain required fwv value");
+                                                    }
+                                                    else if (hasNewOldObjects)
+                                                    {
+                                                        Log.Debug("Skipping WSG payload - contains new/old objects in evs array");
+                                                    }
                                                 }
                                             }
                                             catch (Exception ex)
