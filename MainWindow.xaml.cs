@@ -538,6 +538,34 @@ public partial class MainWindow : Window
                                         continue;
                                     }
 
+                                    // Check for MP3 traffic
+                                    if (url.Contains(".mp3", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        StreamEntry existingEntry;
+                                        // Check if this is a duplicate file
+                                        if (IsDuplicateStream(url, out existingEntry))
+                                        {
+                                            Log.Debug("Skipping duplicate MP3 file: {Url}", url);
+                                            continue;
+                                        }
+
+                                        Log.Information("MP3 traffic detected: {Url}", url);
+                                        await Dispatcher.InvokeAsync(() =>
+                                        {
+                                            streamEntries.Add(new StreamEntry
+                                            {
+                                                Timestamp = DateTime.Now.ToString("HH:mm:ss"),
+                                                StreamType = "mp3",
+                                                Url = url,
+                                                TrackName = "Unnamed MP3",
+                                                ArtistName = "Unknown",
+                                                PreferredImageUrl = null
+                                            });
+                                            UpdateTotalCapturedCount();
+                                        });
+                                        continue;
+                                    }
+
                                     // Check for unnamed MP4 traffic
                                     if (url.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) && !url.Contains("named"))
                                     {
@@ -1413,6 +1441,22 @@ public partial class MainWindow : Window
 
                     await File.WriteAllTextAsync("Stations/Playlist.json", formattedJson);
                     Log.Information("Response saved to Stations/Playlist.json");
+
+                    // Check for podcast episodes and channel-linear in the response
+                    if (jsonElement.TryGetProperty("type", out var typeElement))
+                    {
+                        var type = typeElement.GetString();
+                        if (type == "episode-podcast")
+                        {
+                            Log.Information("Podcast episode detected in playlist: {Id}", 
+                                jsonElement.TryGetProperty("id", out var idElement) ? idElement.GetString() : "unknown");
+                        }
+                        else if (type == "channel-linear")
+                        {
+                            Log.Information("Channel Linear detected in playlist: {Id}", 
+                                jsonElement.TryGetProperty("id", out var idElement) ? idElement.GetString() : "unknown");
+                        }
+                    }
 
                     // Process stream information
                     if (jsonElement.TryGetProperty("streams", out var streamsElement) && streamsElement.ValueKind == JsonValueKind.Array)
