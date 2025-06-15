@@ -1450,6 +1450,69 @@ public partial class MainWindow : Window
                         {
                             Log.Information("Podcast episode detected in playlist: {Id}", 
                                 jsonElement.TryGetProperty("id", out var idElement) ? idElement.GetString() : "unknown");
+
+                            // Process podcast streams
+                            if (jsonElement.TryGetProperty("streams", out var podcastStreamsElement) && 
+                                podcastStreamsElement.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var stream in podcastStreamsElement.EnumerateArray())
+                                {
+                                    if (stream.TryGetProperty("urls", out var urls) && 
+                                        urls.ValueKind == JsonValueKind.Array)
+                                    {
+                                        foreach (var urlEntry in urls.EnumerateArray())
+                                        {
+                                            if (urlEntry.TryGetProperty("isPrimary", out var isPrimaryElement) && 
+                                                isPrimaryElement.GetBoolean() &&
+                                                urlEntry.TryGetProperty("url", out var urlElement))
+                                            {
+                                                string streamUrl = urlElement.GetString();
+                                                string episodeName = "Unknown Episode";
+                                                string showName = "Unknown Show";
+                                                string preferredImageUrl = null;
+
+                                                // Get metadata
+                                                if (stream.TryGetProperty("metadata", out var metadata) &&
+                                                    metadata.TryGetProperty("podcast", out var podcast) &&
+                                                    podcast.TryGetProperty("episode", out var episode))
+                                                {
+                                                    if (episode.TryGetProperty("name", out var nameElement))
+                                                    {
+                                                        episodeName = nameElement.GetString();
+                                                    }
+                                                    if (episode.TryGetProperty("showName", out var showNameElement))
+                                                    {
+                                                        showName = showNameElement.GetString();
+                                                    }
+                                                    if (episode.TryGetProperty("showImages", out var showImages) &&
+                                                        showImages.TryGetProperty("tile", out var tile) &&
+                                                        tile.TryGetProperty("aspect_1x1", out var aspect) &&
+                                                        aspect.TryGetProperty("preferredImage", out var preferredImage) &&
+                                                        preferredImage.TryGetProperty("url", out var imageUrl))
+                                                    {
+                                                        preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
+                                                    }
+                                                }
+
+                                                await Dispatcher.InvokeAsync(() =>
+                                                {
+                                                    streamEntries.Add(new StreamEntry
+                                                    {
+                                                        Timestamp = DateTime.Now.ToString("HH:mm:ss"),
+                                                        StreamType = "podcast",
+                                                        Url = streamUrl,
+                                                        TrackName = episodeName,
+                                                        ArtistName = showName,
+                                                        PreferredImageUrl = preferredImageUrl
+                                                    });
+                                                    UpdateTotalCapturedCount();
+                                                });
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                         else if (type == "channel-linear")
                         {
