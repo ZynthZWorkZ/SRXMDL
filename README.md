@@ -1,4 +1,4 @@
-# SRXDL - SiriusXM Downloader
+# SRXMDL - SiriusXM Downloader
 
 ![SRXDL App](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/main.png)
 
@@ -53,6 +53,30 @@ The application will automatically load your cookies and sign you into your Siri
 - **Now Playing Features**
   - Lyrics display for currently playing songs
   - Enhanced lyrics functionality (in development)
+
+## How it works
+
+SRXMDL operates by launching a Chrome browser instance in the background. Here's how the process works:
+
+1. **Authentication**
+   - Load your SiriusXM cookies into the application
+   - Automatic login to your SiriusXM account
+   - Note: Cookies need to be refreshed every 3-4 hours for optimal performance
+
+2. **Stream Detection**
+   - Monitors SiriusXM network traffic in real-time
+   - Identifies available media streams (MP4, MP3, M3U8)
+   - Extracts stream URLs for playback or download
+
+3. **Content Types**
+   - **Artist Stations**: MP4 streams that can be favorited and accessed from the Stations section
+   - **Podcasts**: Available in MP3 format (downloadable) and M3U8 format (coming soon)
+   - Favorites are automatically saved to `favorites.json`
+
+4. **Features**
+   - Direct playback of detected streams
+   - Download capability for MP3 and MP4 content
+   - M3U8 stream support is currently in development
 
 ## Contributing
 
