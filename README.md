@@ -1,5 +1,7 @@
 # SRXDL - SiriusXM Downloader
 
+![SRXDL App](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/main.png)
+
 A powerful desktop application for downloading and managing SiriusXM content.
 
 ## Prerequisites
