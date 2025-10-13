@@ -294,8 +294,7 @@ public partial class MainWindow : Window
 
             cancellationTokenSource = new CancellationTokenSource();
 
-            // Handle cookie management
-            await HandleCookieManagement();
+            // Skip cookie management - user will login manually
 
             // Initialize Chrome options
             var options = new ChromeOptions();
@@ -309,77 +308,11 @@ public partial class MainWindow : Window
             artistStations = new ArtistStations(driver, Dispatcher, artistEntries);
             artistStations.ArtistListView = ArtistListView;
 
-            // First navigate to the domain to set cookies
-            await NavigateWithRetry(driver, "https://www.siriusxm.com");
-
-            // Check for welcome page redirect
-            if (driver.Url == "https://www.siriusxm.com/player/welcome")
-            {
-                await StopMonitoring();
-                MessageBox.Show(
-                    "⚠️ Cookie Update Required ⚠️\n\n" +
-                    "Please follow these steps:\n" +
-                    "1. Visit SiriusXM website\n" +
-                    "2. Log in to your account\n" +
-                    "3. Export your cookies\n" +
-                    "4. Save them to /cookies as temp.json\n\n" +
-                    "This will automatically update your cookie values.",
-                    "Cookie Update Required",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning
-                );
-                return;
-            }
-
-            // Read cookies from file
-            var cookieJson = await File.ReadAllTextAsync("cookies/www.siriusxm.com.json");
-            var cookieData = JsonSerializer.Deserialize<CookieData>(cookieJson);
-
-            // Add each cookie to the browser
-            foreach (var cookie in cookieData.Cookies)
-            {
-                try
-                {
-                    var seleniumCookie = new Cookie(
-                        cookie.Name,
-                        cookie.Value,
-                        cookie.Domain,
-                        cookie.Path,
-                        cookie.ExpirationDate != null ? DateTimeOffset.FromUnixTimeSeconds((long)cookie.ExpirationDate).DateTime : null
-                    );
-
-                    driver.Manage().Cookies.AddCookie(seleniumCookie);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning(ex, "Error adding cookie {CookieName}", cookie.Name);
-                }
-            }
-
-            // Navigate to the player home page
+            // Navigate directly to the player page for manual login
             await NavigateWithRetry(driver, "https://www.siriusxm.com/player/home");
 
-            // Check again for welcome page redirect after navigation
-            if (driver.Url == "https://www.siriusxm.com/player/welcome")
-            {
-                await StopMonitoring();
-                MessageBox.Show(
-                    "⚠️ Cookie Update Required ⚠️\n\n" +
-                    "Please follow these steps:\n" +
-                    "1. Visit SiriusXM website\n" +
-                    "2. Log in to your account\n" +
-                    "3. Export your cookies\n" +
-                    "4. Save them to /cookies as temp.json\n\n" +
-                    "This will automatically update your cookie values.",
-                    "Cookie Update Required",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning
-                );
-                return;
-            }
-
-            StatusText.Text = "Monitoring active";
-            Log.Information("Browser is now open and monitoring for MP4 and streaming requests.");
+            StatusText.Text = "Browser opened - please login manually";
+            Log.Information("Browser is now open. User can login manually and monitoring will begin automatically.");
 
             // Start monitoring in background
             _ = Task.Run(() => MonitorNetworkTraffic(cancellationTokenSource.Token));
@@ -468,36 +401,23 @@ public partial class MainWindow : Window
         {
             try
             {
-                // Check if we've been redirected to the welcome page
+                // Check if we're on the welcome page (user needs to login)
                 if (driver?.Url != null && driver.Url.Contains("siriusxm.com/player/welcome"))
                 {
-                    Log.Warning("Detected welcome page redirect");
-                    await StopMonitoring();
-                    
-                    // Ensure we're on the UI thread and show the message
+                    Log.Information("User is on welcome page - waiting for manual login");
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        try
-                        {
-                            MessageBox.Show(
-                                "⚠️ Cookie Update Required ⚠️\n\n" +
-                                "Please follow these steps:\n" +
-                                "1. Visit SiriusXM website\n" +
-                                "2. Log in to your account\n" +
-                                "3. Export your cookies\n" +
-                                "4. Save them to /cookies as temp.json\n\n" +
-                                "This will automatically update your cookie values.",
-                                "Cookie Update Required",
-                                MessageBoxButton.OK,
-                                MessageBoxImage.Warning
-                            );
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error(ex, "Error showing message box");
-                        }
+                        StatusText.Text = "Please login in the browser window";
                     });
-                    return;
+                }
+
+                // Check if user has successfully logged in (not on welcome page)
+                if (driver?.Url != null && !driver.Url.Contains("siriusxm.com/player/welcome") && driver.Url.Contains("siriusxm.com"))
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        StatusText.Text = "Monitoring active - login successful";
+                    });
                 }
 
                 // Check current URL for artist station
@@ -602,7 +522,6 @@ public partial class MainWindow : Window
 
                                         // Get the auth token from the original request
                                         var feedbackAuthToken = "";
-                                        string feedbackResponseBody = "";
 
                                         var feedbackRequestLog = logs.FirstOrDefault(l =>
                                         {
@@ -1143,128 +1062,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task HandleCookieManagement()
-    {
-        try
-        {
-            if (File.Exists("cookies/temp.json"))
-            {
-                Log.Information("Found temp.json, updating main cookie file...");
-
-                var tempJson = await File.ReadAllTextAsync("cookies/temp.json");
-                var mainJson = await File.ReadAllTextAsync("cookies/www.siriusxm.com.json");
-
-                var tempData = JsonSerializer.Deserialize<CookieData>(tempJson);
-                var mainData = JsonSerializer.Deserialize<CookieData>(mainJson);
-
-                var tempCookies = tempData.Cookies.ToDictionary(c => c.Name);
-
-                foreach (var cookie in mainData.Cookies)
-                {
-                    if (tempCookies.TryGetValue(cookie.Name, out var tempCookie))
-                    {
-                        cookie.Value = tempCookie.Value;
-                    }
-                }
-
-                var updatedJson = JsonSerializer.Serialize(mainData, new JsonSerializerOptions { WriteIndented = true });
-                await File.WriteAllTextAsync("cookies/www.siriusxm.com.json", updatedJson);
-
-                File.Delete("cookies/temp.json");
-                Log.Information("Cookie update completed and temp.json deleted");
-            }
-            else if (File.Exists("cookies/temp.txt"))
-            {
-                Log.Information("Found temp.txt, updating main cookie file...");
-
-                var tempContent = await File.ReadAllTextAsync("cookies/temp.txt");
-                var tempData = ParseNetscapeCookieFile(tempContent);
-                var mainJson = await File.ReadAllTextAsync("cookies/www.siriusxm.com.json");
-                var mainData = JsonSerializer.Deserialize<CookieData>(mainJson);
-
-                // Create dictionary with the last occurrence of each cookie
-                var tempCookies = new Dictionary<string, CookieInfo>();
-                foreach (var cookie in tempData.Cookies)
-                {
-                    tempCookies[cookie.Name] = cookie; // This will overwrite any previous cookie with the same name
-                }
-
-                // Update values in mainData
-                foreach (var cookie in mainData.Cookies)
-                {
-                    if (tempCookies.TryGetValue(cookie.Name, out var tempCookie))
-                    {
-                        cookie.Value = tempCookie.Value;
-                        // Also update other properties if they exist in the temp cookie
-                        if (tempCookie.ExpirationDate.HasValue)
-                            cookie.ExpirationDate = tempCookie.ExpirationDate;
-                        if (!string.IsNullOrEmpty(tempCookie.Path))
-                            cookie.Path = tempCookie.Path;
-                        cookie.Secure = tempCookie.Secure;
-                        cookie.HttpOnly = tempCookie.HttpOnly;
-                    }
-                }
-
-                var updatedJson = JsonSerializer.Serialize(mainData, new JsonSerializerOptions { WriteIndented = true });
-                await File.WriteAllTextAsync("cookies/www.siriusxm.com.json", updatedJson);
-
-                File.Delete("cookies/temp.txt");
-                Log.Information("Cookie update completed and temp.txt deleted");
-            }
-            else
-            {
-                Log.Information("No temp file found, using existing cookie file");
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error during cookie management");
-            throw;
-        }
-    }
-
-    private CookieData ParseNetscapeCookieFile(string content)
-    {
-        var cookieData = new CookieData
-        {
-            Url = "https://www.siriusxm.com",
-            Cookies = new List<CookieInfo>()
-        };
-
-        var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-        
-        // Skip the header line if it exists
-        int startIndex = lines[0].StartsWith("#") ? 1 : 0;
-
-        for (int i = startIndex; i < lines.Length; i++)
-        {
-            var line = lines[i].Trim();
-            if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
-
-            var parts = line.Split('\t');
-            if (parts.Length >= 7)
-            {
-                var cookie = new CookieInfo
-                {
-                    Domain = parts[0],
-                    HttpOnly = false,
-                    Path = parts[2],
-                    Secure = parts[3] == "TRUE",
-                    ExpirationDate = double.Parse(parts[4]),
-                    Name = parts[5],
-                    Value = parts[6],
-                    HostOnly = false,
-                    SameSite = "no_restriction",
-                    Session = false,
-                    StoreId = "0"
-                };
-
-                cookieData.Cookies.Add(cookie);
-            }
-        }
-
-        return cookieData;
-    }
 
     private async Task NavigateWithRetry(IWebDriver driver, string url, int maxRetries = 3)
     {
@@ -1298,41 +1095,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void ResetCookiesButton_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var cookiePath = "cookies/www.siriusxm.com.json";
-            if (File.Exists(cookiePath))
-            {
-                var cookieJson = await File.ReadAllTextAsync(cookiePath);
-                var cookieData = JsonSerializer.Deserialize<CookieData>(cookieJson);
-
-                // Reset all cookie values to "0000"
-                foreach (var cookie in cookieData.Cookies)
-                {
-                    cookie.Value = "0000";
-                }
-
-                // Save the updated cookies
-                var updatedJson = JsonSerializer.Serialize(cookieData, new JsonSerializerOptions { WriteIndented = true });
-                await File.WriteAllTextAsync(cookiePath, updatedJson);
-
-                StatusText.Text = "Cookies have been reset successfully";
-                Log.Information("Cookies have been reset successfully");
-            }
-            else
-            {
-                StatusText.Text = "Cookie file not found";
-                Log.Warning("Cookie file not found at {Path}", cookiePath);
-            }
-        }
-        catch (Exception ex)
-        {
-            StatusText.Text = "Error resetting cookies";
-            Log.Error(ex, "Error resetting cookies");
-        }
-    }
 
     protected override void OnClosed(EventArgs e)
     {
@@ -2025,51 +1787,6 @@ public partial class MainWindow : Window
     }
 }
 
-// Classes to deserialize the cookie JSON
-public class CookieData
-{
-    [JsonPropertyName("url")]
-    public string Url { get; set; }
-
-    [JsonPropertyName("cookies")]
-    public List<CookieInfo> Cookies { get; set; }
-}
-
-public class CookieInfo
-{
-    [JsonPropertyName("domain")]
-    public string Domain { get; set; }
-
-    [JsonPropertyName("expirationDate")]
-    public double? ExpirationDate { get; set; }
-
-    [JsonPropertyName("hostOnly")]
-    public bool HostOnly { get; set; }
-
-    [JsonPropertyName("httpOnly")]
-    public bool HttpOnly { get; set; }
-
-    [JsonPropertyName("name")]
-    public string Name { get; set; }
-
-    [JsonPropertyName("path")]
-    public string Path { get; set; }
-
-    [JsonPropertyName("sameSite")]
-    public string SameSite { get; set; }
-
-    [JsonPropertyName("secure")]
-    public bool Secure { get; set; }
-
-    [JsonPropertyName("session")]
-    public bool Session { get; set; }
-
-    [JsonPropertyName("storeId")]
-    public string StoreId { get; set; }
-
-    [JsonPropertyName("value")]
-    public string Value { get; set; }
-}
 
 // Classes to deserialize Chrome performance logs
 public class PerformanceLogEntry

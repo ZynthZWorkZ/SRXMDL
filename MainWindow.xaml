@@ -515,9 +515,7 @@
                         </Button>
                         <Button x:Name="StopButton" Content="⏹ STOP" Click="StopButton_Click" 
                                 Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonPink}"
-                                IsEnabled="False" Padding="25,15" FontSize="16" Margin="0,0,20,0"/>
-                        <Button x:Name="ResetCookiesButton" Content="🔄 RESET" Click="ResetCookiesButton_Click"
-                                Style="{StaticResource GradientButton}" Padding="25,15" FontSize="14"/>
+                                IsEnabled="False" Padding="25,15" FontSize="16"/>
                 </StackPanel>
                 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
