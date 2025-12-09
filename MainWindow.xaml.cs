@@ -514,6 +514,34 @@ public partial class MainWindow : Window
                                         continue;
                                     }
 
+                                    // Check for M3U8 traffic
+                                    if (url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        StreamEntry existingEntry;
+                                        // Check if this is a duplicate file
+                                        if (IsDuplicateStream(url, out existingEntry))
+                                        {
+                                            Log.Debug("Skipping duplicate M3U8 file: {Url}", url);
+                                            continue;
+                                        }
+
+                                        Log.Information("M3U8 traffic detected: {Url}", url);
+                                        await Dispatcher.InvokeAsync(() =>
+                                        {
+                                            streamEntries.Add(new StreamEntry
+                                            {
+                                                Timestamp = DateTime.Now.ToString("HH:mm:ss"),
+                                                StreamType = "m3u8",
+                                                Url = url,
+                                                TrackName = "Unnamed M3U8",
+                                                ArtistName = "Unknown",
+                                                PreferredImageUrl = null
+                                            });
+                                            UpdateTotalCapturedCount();
+                                        });
+                                        continue;
+                                    }
+
                                     // Monitor station feedback endpoint
                                     if (url.Contains("api.edge-gateway.siriusxm.com/stations/v1/station-feedback/station/type/artist-station/id"))
                                     {
@@ -1265,6 +1293,184 @@ public partial class MainWindow : Window
                                                         Url = streamUrl,
                                                         TrackName = episodeName,
                                                         ArtistName = showName,
+                                                        PreferredImageUrl = preferredImageUrl
+                                                    });
+                                                    UpdateTotalCapturedCount();
+                                                });
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else if (type == "episode-video")
+                        {
+                            Log.Information("Video episode detected in playlist: {Id}", 
+                                jsonElement.TryGetProperty("id", out var idElement) ? idElement.GetString() : "unknown");
+
+                            // Process video episode streams (M3U8)
+                            if (jsonElement.TryGetProperty("streams", out var videoStreamsElement) && 
+                                videoStreamsElement.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var stream in videoStreamsElement.EnumerateArray())
+                                {
+                                    if (stream.TryGetProperty("urls", out var urls) && 
+                                        urls.ValueKind == JsonValueKind.Array)
+                                    {
+                                        foreach (var urlEntry in urls.EnumerateArray())
+                                        {
+                                            if (urlEntry.TryGetProperty("name", out var nameElement) &&
+                                                nameElement.GetString() == "primary" &&
+                                                urlEntry.TryGetProperty("url", out var urlElement))
+                                            {
+                                                string streamUrl = urlElement.GetString();
+                                                string episodeName = "Unknown Episode";
+                                                string channelName = "Unknown Channel";
+                                                string preferredImageUrl = null;
+
+                                                // Get metadata from metadata.vod.episode
+                                                if (jsonElement.TryGetProperty("metadata", out var metadata) &&
+                                                    metadata.TryGetProperty("vod", out var vod) &&
+                                                    vod.TryGetProperty("episode", out var episode))
+                                                {
+                                                    if (episode.TryGetProperty("name", out var episodeNameElement))
+                                                    {
+                                                        episodeName = episodeNameElement.GetString();
+                                                    }
+                                                    if (vod.TryGetProperty("channelName", out var channelNameElement))
+                                                    {
+                                                        channelName = channelNameElement.GetString();
+                                                    }
+                                                    if (episode.TryGetProperty("images", out var images) &&
+                                                        images.TryGetProperty("tile", out var tile) &&
+                                                        tile.TryGetProperty("aspect_1x1", out var aspect) &&
+                                                        aspect.TryGetProperty("preferredImage", out var preferredImage) &&
+                                                        preferredImage.TryGetProperty("url", out var imageUrl))
+                                                    {
+                                                        preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
+                                                    }
+                                                }
+
+                                                // Check if this URL already exists in the stream entries
+                                                StreamEntry existingEntry;
+                                                if (IsDuplicateStream(streamUrl, out existingEntry))
+                                                {
+                                                    // If the existing entry is unnamed, update it with the metadata
+                                                    if (existingEntry.TrackName == "Unnamed M3U8")
+                                                    {
+                                                        await Dispatcher.InvokeAsync(() =>
+                                                        {
+                                                            existingEntry.TrackName = episodeName;
+                                                            existingEntry.ArtistName = channelName;
+                                                            existingEntry.PreferredImageUrl = preferredImageUrl;
+                                                            // Refresh the ListView to show the updated information
+                                                            StreamListView.Items.Refresh();
+                                                        });
+                                                        Log.Information("Updated unnamed M3U8 entry with metadata: {TrackName} - {ArtistName}", episodeName, channelName);
+                                                    }
+                                                    Log.Debug("Skipping duplicate M3U8 stream URL: {Url}", streamUrl);
+                                                    continue;
+                                                }
+
+                                                await Dispatcher.InvokeAsync(() =>
+                                                {
+                                                    streamEntries.Add(new StreamEntry
+                                                    {
+                                                        Timestamp = DateTime.Now.ToString("HH:mm:ss"),
+                                                        StreamType = "m3u8",
+                                                        Url = streamUrl,
+                                                        TrackName = episodeName,
+                                                        ArtistName = channelName,
+                                                        PreferredImageUrl = preferredImageUrl
+                                                    });
+                                                    UpdateTotalCapturedCount();
+                                                });
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else if (type == "episode-audio")
+                        {
+                            Log.Information("Audio episode detected in playlist: {Id}", 
+                                jsonElement.TryGetProperty("id", out var idElement) ? idElement.GetString() : "unknown");
+
+                            // Process audio episode streams (M3U8)
+                            if (jsonElement.TryGetProperty("streams", out var audioStreamsElement) && 
+                                audioStreamsElement.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var stream in audioStreamsElement.EnumerateArray())
+                                {
+                                    if (stream.TryGetProperty("urls", out var urls) && 
+                                        urls.ValueKind == JsonValueKind.Array)
+                                    {
+                                        foreach (var urlEntry in urls.EnumerateArray())
+                                        {
+                                            if (urlEntry.TryGetProperty("name", out var nameElement) &&
+                                                nameElement.GetString() == "primary" &&
+                                                urlEntry.TryGetProperty("url", out var urlElement))
+                                            {
+                                                string streamUrl = urlElement.GetString();
+                                                string episodeName = "Unknown Episode";
+                                                string channelName = "Unknown Channel";
+                                                string preferredImageUrl = null;
+
+                                                // Get metadata from metadata.aod.episode
+                                                if (stream.TryGetProperty("metadata", out var metadata) &&
+                                                    metadata.TryGetProperty("aod", out var aod) &&
+                                                    aod.TryGetProperty("episode", out var episode))
+                                                {
+                                                    if (episode.TryGetProperty("name", out var episodeNameElement))
+                                                    {
+                                                        episodeName = episodeNameElement.GetString();
+                                                    }
+                                                    if (aod.TryGetProperty("channelName", out var channelNameElement))
+                                                    {
+                                                        channelName = channelNameElement.GetString();
+                                                    }
+                                                    if (episode.TryGetProperty("images", out var images) &&
+                                                        images.TryGetProperty("tile", out var tile) &&
+                                                        tile.TryGetProperty("aspect_1x1", out var aspect) &&
+                                                        aspect.TryGetProperty("preferredImage", out var preferredImage) &&
+                                                        preferredImage.TryGetProperty("url", out var imageUrl))
+                                                    {
+                                                        preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
+                                                    }
+                                                }
+
+                                                // Check if this URL already exists in the stream entries
+                                                StreamEntry existingEntry;
+                                                if (IsDuplicateStream(streamUrl, out existingEntry))
+                                                {
+                                                    // If the existing entry is unnamed, update it with the metadata
+                                                    if (existingEntry.TrackName == "Unnamed M3U8")
+                                                    {
+                                                        await Dispatcher.InvokeAsync(() =>
+                                                        {
+                                                            existingEntry.TrackName = episodeName;
+                                                            existingEntry.ArtistName = channelName;
+                                                            existingEntry.PreferredImageUrl = preferredImageUrl;
+                                                            // Refresh the ListView to show the updated information
+                                                            StreamListView.Items.Refresh();
+                                                        });
+                                                        Log.Information("Updated unnamed M3U8 entry with metadata: {TrackName} - {ArtistName}", episodeName, channelName);
+                                                    }
+                                                    Log.Debug("Skipping duplicate M3U8 stream URL: {Url}", streamUrl);
+                                                    continue;
+                                                }
+
+                                                await Dispatcher.InvokeAsync(() =>
+                                                {
+                                                    streamEntries.Add(new StreamEntry
+                                                    {
+                                                        Timestamp = DateTime.Now.ToString("HH:mm:ss"),
+                                                        StreamType = "m3u8",
+                                                        Url = streamUrl,
+                                                        TrackName = episodeName,
+                                                        ArtistName = channelName,
                                                         PreferredImageUrl = preferredImageUrl
                                                     });
                                                     UpdateTotalCapturedCount();
