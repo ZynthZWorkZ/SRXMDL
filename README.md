@@ -10,17 +10,24 @@ Modern WPF app to monitor SiriusXM traffic, capture stream URLs, and download MP
 - .NET 9 SDK (for build/run)
 - ffmpeg (playback, downloads,conversions)
 - yt-dlp (M3U8 downloads)
-- pycryptodomex (optinal but yt-dlp will download AES protected m3u8's faster if installed)
+- pycryptodomex (optional but yt-dlp will download AES protected m3u8's faster if installed)
 
 ## Quick Start
 ```bash
 dotnet run
 ```
 
+Or
+
+## Build
+```bash
+dotnet build
+```
+
 ## Setup
 1) Launch the app click Start Monetring and a Chrome window will open.
 2) Manually sign in to your SiriusXM account in that window.
-3) Once signed in, monitoring and capture begin automatically anything you play will be monitored and sent to the Sream Activity.
+3) Once signed in, monitoring and capture begin automatically anything you play will be monitored and sent to the Stream Activity.
 
 ## What it does
 - **Network capture**: MP3, MP4, M3U8 streams .
@@ -35,10 +42,7 @@ dotnet run
 - **Responsive UI**: Dark theme, scaled layout, collapsible artist panel on narrow widths.
 
 
-## Build
-```bash
-dotnet build
-```
+
 Full Channel Track list coming soon & Auto Sign in ⚠
 
 ## Contributing
