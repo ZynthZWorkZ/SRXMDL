@@ -677,6 +677,9 @@
                                                 <Button Content="📋" Click="CopyButton_Click" 
                                                         Style="{StaticResource GradientButton}"
                                                         ToolTip="Copy Info" Margin="0,0,6,0" Padding="10,6"/>
+                                                <Button Content="🎶" Click="ApplyNowPlaying_Click" 
+                                                        Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonCyan}"
+                                                        ToolTip="Apply Now Playing metadata" Margin="0,0,6,0" Padding="10,6"/>
                                                 <Button Content="▶️" Click="PlayButton_Click" 
                                                         BorderBrush="{StaticResource NeonGreen}"
                                                         ToolTip="Play Track" Margin="0,0,6,0" Padding="10,6">

@@ -1204,6 +1204,33 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ApplyNowPlaying_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (sender is Button button && button.DataContext is StreamEntry entry && currentTrack != null)
+            {
+                var newTrack = string.IsNullOrWhiteSpace(currentTrack.TrackName) ? entry.TrackName : currentTrack.TrackName;
+                var newArtist = string.IsNullOrWhiteSpace(currentTrack.StationName) ? entry.ArtistName : currentTrack.StationName;
+                var newArt = string.IsNullOrWhiteSpace(currentTrack.AlbumArtUrl) ? entry.PreferredImageUrl : currentTrack.AlbumArtUrl;
+
+                entry.TrackName = newTrack;
+                entry.ArtistName = newArtist;
+                entry.PreferredImageUrl = newArt;
+
+                // Refresh UI
+                StreamListView.Items.Refresh();
+                StatusText.Text = "Applied Now Playing metadata to selected stream.";
+                Log.Information("Applied Now Playing metadata to stream: {Track} - {Artist}", newTrack, newArtist);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error applying Now Playing metadata");
+            StatusText.Text = "Error applying Now Playing metadata";
+        }
+    }
+
 
     protected override void OnClosed(EventArgs e)
     {
