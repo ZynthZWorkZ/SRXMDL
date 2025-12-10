@@ -11,6 +11,32 @@
         ResizeMode="CanResize">
     
     <Window.Resources>
+        <!-- Row button style to mimic flat list items -->
+        <Style x:Key="NeonRowButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Row" Background="Transparent" CornerRadius="0" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Row" Property="Background" Value="#1F1B3A"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Row" Property="Background" Value="#181430"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Row" Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <!-- Reuse the same color resources from MainWindow -->
         <SolidColorBrush x:Key="PrimaryBackground" Color="#0A0B1E"/>
         <SolidColorBrush x:Key="CardBackground" Color="#1A1B3A"/>
@@ -119,7 +145,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="24">
+    <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -128,165 +154,168 @@
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <Border Grid.Row="0" Style="{StaticResource GlassCard}" Padding="24,16" Margin="0,0,0,16">
-            <StackPanel>
-                <TextBlock Text="Download Options" 
-                           Foreground="{StaticResource TextPrimary}" 
-                           FontSize="20" 
-                           FontWeight="Bold"
-                           Margin="0,0,0,4"/>
-                <TextBlock Text="Select your preferred audio quality for download" 
-                           Foreground="{StaticResource TextSecondary}"
-                           FontSize="13"/>
-            </StackPanel>
-        </Border>
-
-        <!-- Filename Input -->
-        <Border Grid.Row="1" Style="{StaticResource GlassCard}" Padding="24,16" Margin="0,0,0,16">
+        <Border Grid.Row="0" Style="{StaticResource GlassCard}" Padding="18,12" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Output Filename:" 
-                           Foreground="{StaticResource TextPrimary}"
-                           FontSize="13"
-                           VerticalAlignment="Center"
-                           Margin="0,0,12,0"/>
+                <Border Width="42" Height="42" CornerRadius="10" Background="#2A1F51" VerticalAlignment="Center">
+                    <TextBlock Text="" FontFamily="Segoe MDL2 Assets" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="18" Foreground="#F7B500"/>
+                </Border>
+                <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                    <TextBlock Text="Download presets" 
+                               Foreground="{StaticResource TextPrimary}" 
+                               FontSize="16" 
+                               FontWeight="Bold"
+                               Margin="0,0,0,2"/>
+                    <TextBlock Text="Pick a preset to start the download" 
+                               Foreground="{StaticResource TextSecondary}"
+                               FontSize="12"/>
+                </StackPanel>
+                <Button Grid.Column="2" Content="Close" Click="CloseButton_Click"
+                        Style="{StaticResource PrimaryButton}"
+                        Background="{StaticResource AccentRed}"
+                        Padding="10,6"/>
+            </Grid>
+        </Border>
+
+        <!-- Filename Input -->
+        <Border Grid.Row="1" Style="{StaticResource GlassCard}" Padding="16,12" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Vertical">
+                <TextBlock Text="Output filename (optional)" 
+                               Foreground="{StaticResource TextSecondary}"
+                               FontSize="11"/>
+                    <TextBlock Text="Base name only; suffix + .wav are added" 
+                               Foreground="{StaticResource TextMuted}"
+                               FontSize="10"/>
+                </StackPanel>
                 <TextBox x:Name="OutputFilenameTextBox"
                          Grid.Column="1"
                          Style="{StaticResource ModernTextBox}"
-                         Text="output"
-                         VerticalAlignment="Center"/>
+                         Text=""
+                         VerticalAlignment="Center"
+                         HorizontalAlignment="Stretch"
+                         Margin="10,0,0,0"/>
+
+                <StackPanel Grid.Column="2" Orientation="Vertical" HorizontalAlignment="Right">
+                    <TextBlock Text="Format" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+                    <ComboBox x:Name="FormatComboBox" Width="120" SelectedIndex="0">
+                        <ComboBoxItem Content="MP3" IsSelected="True"/>
+                        <ComboBoxItem Content="WAV"/>
+                    </ComboBox>
+                </StackPanel>
             </Grid>
         </Border>
 
         <!-- Download Options -->
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-            <StackPanel>
-                <!-- Low Quality Option -->
-                <Border Style="{StaticResource DownloadOptionCard}">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
+        <Border Grid.Row="2" Style="{StaticResource GlassCard}" Padding="0" Margin="0,0,0,12">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <!-- Standard list-style rows inspired by the reference -->
+                    <!-- Low -->
+                    <Button Style="{StaticResource NeonRowButton}" Click="LowQualityDownload_Click" Padding="14,10" Background="Transparent" BorderThickness="0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Width="32" Height="32" CornerRadius="8" Background="#F59E0B" VerticalAlignment="Center">
+                                <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                <TextBlock Text="Low Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock Text="8-bit • 22.05 kHz • Mono" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="Voice" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Button>
 
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="Low Quality" 
-                                       Foreground="{StaticResource TextPrimary}" 
-                                       FontSize="15" 
-                                       FontWeight="SemiBold"/>
-                            <TextBlock Text="8-bit • 22.05 kHz • Mono" 
-                                       Foreground="{StaticResource TextSecondary}"
-                                       FontSize="12"
-                                       Margin="0,4,0,0"/>
-                        </StackPanel>
+                    <!-- Standard -->
+                    <Button Style="{StaticResource NeonRowButton}" Click="StandardQualityDownload_Click" Padding="14,10" Background="Transparent" BorderThickness="0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Width="32" Height="32" CornerRadius="8" Background="#06B6D4" VerticalAlignment="Center">
+                                <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                <TextBlock Text="Standard Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock Text="16-bit • 44.1 kHz • Stereo" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="Default" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Button>
 
-                        <Button Grid.Column="1" 
-                                Content="Download" 
-                                Style="{StaticResource PrimaryButton}"
-                                Click="LowQualityDownload_Click"/>
-                    </Grid>
-                </Border>
+                    <!-- High -->
+                    <Button Style="{StaticResource NeonRowButton}" Click="HighQualityDownload_Click" Padding="14,10" Background="Transparent" BorderThickness="0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Width="32" Height="32" CornerRadius="8" Background="#8B5CF6" VerticalAlignment="Center">
+                                <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                <TextBlock Text="High Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock Text="24-bit • 48 kHz • Stereo" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="Broadcast" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Button>
 
-                <!-- Standard Quality Option -->
-                <Border Style="{StaticResource DownloadOptionCard}">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="Standard Quality" 
-                                       Foreground="{StaticResource TextPrimary}" 
-                                       FontSize="15" 
-                                       FontWeight="SemiBold"/>
-                            <TextBlock Text="16-bit • 44.1 kHz • Stereo" 
-                                       Foreground="{StaticResource TextSecondary}"
-                                       FontSize="12"
-                                       Margin="0,4,0,0"/>
-                        </StackPanel>
-
-                        <Button Grid.Column="1" 
-                                Content="Download" 
-                                Style="{StaticResource PrimaryButton}"
-                                Click="StandardQualityDownload_Click"/>
-                    </Grid>
-                </Border>
-
-                <!-- High Quality Option -->
-                <Border Style="{StaticResource DownloadOptionCard}">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="High Quality" 
-                                       Foreground="{StaticResource TextPrimary}" 
-                                       FontSize="15" 
-                                       FontWeight="SemiBold"/>
-                            <TextBlock Text="24-bit • 48 kHz • Stereo" 
-                                       Foreground="{StaticResource TextSecondary}"
-                                       FontSize="12"
-                                       Margin="0,4,0,0"/>
-                        </StackPanel>
-
-                        <Button Grid.Column="1" 
-                                Content="Download" 
-                                Style="{StaticResource PrimaryButton}"
-                                Click="HighQualityDownload_Click"/>
-                    </Grid>
-                </Border>
-
-                <!-- Highest Quality Option -->
-                <Border Style="{StaticResource DownloadOptionCard}">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="Highest Quality" 
-                                       Foreground="{StaticResource TextPrimary}" 
-                                       FontSize="15" 
-                                       FontWeight="SemiBold"/>
-                            <TextBlock Text="32-bit • 96 kHz • Stereo" 
-                                       Foreground="{StaticResource TextSecondary}"
-                                       FontSize="12"
-                                       Margin="0,4,0,0"/>
-                        </StackPanel>
-
-                        <Button Grid.Column="1" 
-                                Content="Download" 
-                                Style="{StaticResource PrimaryButton}"
-                                Click="HighestQualityDownload_Click"/>
-                    </Grid>
-                </Border>
-            </StackPanel>
-        </ScrollViewer>
+                    <!-- Highest -->
+                    <Button Style="{StaticResource NeonRowButton}" Click="HighestQualityDownload_Click" Padding="14,10" Background="Transparent" BorderThickness="0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Width="32" Height="32" CornerRadius="8" Background="#EC4899" VerticalAlignment="Center">
+                                <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                <TextBlock Text="Highest Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock Text="32-bit • 96 kHz • Stereo" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="Mastering" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Button>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
 
         <!-- Footer -->
-        <Border Grid.Row="3" Style="{StaticResource GlassCard}" Padding="24,16" Margin="0,16,0,0">
+        <Border Grid.Row="3" Style="{StaticResource GlassCard}" Padding="16,12" Margin="0,12,0,0">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Text="Select a quality option above to begin download" 
+                <TextBlock Text="Quality label + .wav are added automatically."
                            Foreground="{StaticResource TextSecondary}"
-                           FontSize="13"
+                           FontSize="11"
                            VerticalAlignment="Center"/>
 
-                <Button Grid.Column="1" 
-                        Content="Close" 
+                <Button Grid.Column="1" Content="Close" 
                         Style="{StaticResource PrimaryButton}"
                         Background="{StaticResource AccentRed}"
+                        Padding="10,6"
                         Click="CloseButton_Click"/>
             </Grid>
         </Border>

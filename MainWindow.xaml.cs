@@ -42,6 +42,10 @@ public partial class MainWindow : Window
     private string? lastTuneSourcePayload;
     private string? lastTuneSourceAuthToken;
     private ArtistStations? artistStations;
+    private const double BaseWidth = 1250;
+    private const double BaseHeight = 800;
+    private const double MinScale = 0.7;
+    private const double MaxScale = 1.0;
     public bool IsMonitoring
     {
         get => _isMonitoring;
@@ -66,6 +70,7 @@ public partial class MainWindow : Window
         SetupLogging();
         SetupNowPlayingTimer();
         SetupStationFeedbackWatcher();
+        UpdateResponsiveLayout();
     }
 
     private void SetupLogging()
@@ -1071,6 +1076,80 @@ public partial class MainWindow : Window
                                             }
                                         }
                                     }
+                                    // Monitor playback key endpoint
+                                    else if (url.Contains("api.edge-gateway.siriusxm.com/playback/key/v1/"))
+                                    {
+                                        Log.Information("Playback key request detected: {Url}", url);
+
+                                        var keyAuthToken = "";
+
+                                        var keyRequestLog = logs.FirstOrDefault(l =>
+                                        {
+                                            var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
+                                            return entry?.Message?.Method == "Network.requestWillBeSent" &&
+                                                   entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
+                                        });
+
+                                        if (keyRequestLog != null)
+                                        {
+                                            var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(keyRequestLog.Message);
+
+                                            if (requestEntry?.Message?.Params?.Request?.Headers != null)
+                                            {
+                                                foreach (var header in requestEntry.Message.Params.Request.Headers)
+                                                {
+                                                    if (header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        keyAuthToken = header.Value;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        if (!string.IsNullOrEmpty(keyAuthToken))
+                                        {
+                                            try
+                                            {
+                                                using var httpClient = new HttpClient();
+                                                httpClient.DefaultRequestHeaders.Add("Authorization", keyAuthToken);
+                                                httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+
+                                                var response = await httpClient.GetAsync(url);
+                                                var body = await response.Content.ReadAsStringAsync();
+
+                                                if (response.IsSuccessStatusCode)
+                                                {
+                                                    // Ensure directory exists
+                                                    if (!Directory.Exists("HLSKey"))
+                                                    {
+                                                        Directory.CreateDirectory("HLSKey");
+                                                    }
+
+                                                    // Save bearer token for reference
+                                                    await File.WriteAllTextAsync("HLSKey/authorization Bearer.txt", keyAuthToken);
+
+                                                    // Save prettified JSON
+                                                    var jsonElement = JsonSerializer.Deserialize<JsonElement>(body);
+                                                    var formatted = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions { WriteIndented = true });
+                                                    await File.WriteAllTextAsync("HLSKey/response.json", formatted);
+                                                    Log.Information("Playback key saved to HLSKey/response.json");
+                                                }
+                                                else
+                                                {
+                                                    Log.Warning("Playback key request failed: {StatusCode}", response.StatusCode);
+                                                }
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                Log.Error(ex, "Error fetching playback key response");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            Log.Warning("Missing auth token for playback key request; skipping fetch.");
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1113,11 +1192,13 @@ public partial class MainWindow : Window
 
     private void DownloadButton_Click(object sender, RoutedEventArgs e)
     {
-        var button = sender as Button;
-        var item = button.DataContext as StreamEntry;
-        if (item != null)
+        if (sender is Button button && button.DataContext is StreamEntry item)
         {
-            var downloadWindow = new DownloadWindow(item.Url);
+            var downloadWindow = new DownloadWindow(
+                item.Url,
+                item.TrackName,
+                item.ArtistName,
+                item.PreferredImageUrl);
             downloadWindow.Owner = this;
             downloadWindow.ShowDialog();
         }
@@ -1130,6 +1211,49 @@ public partial class MainWindow : Window
         stationFeedbackWatcher?.Dispose();
         StopMonitoring().Wait();
         Log.CloseAndFlush();
+    }
+
+    private void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        UpdateResponsiveLayout();
+    }
+
+    private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateResponsiveLayout();
+    }
+
+    private void UpdateResponsiveLayout()
+    {
+        try
+        {
+            // Scale based on window size relative to base design
+            double widthRatio = ActualWidth / BaseWidth;
+            double heightRatio = ActualHeight / BaseHeight;
+            double scale = Math.Min(MaxScale, Math.Max(MinScale, Math.Min(widthRatio, heightRatio)));
+
+            RootScale.ScaleX = scale;
+            RootScale.ScaleY = scale;
+
+            // Collapse artist section on narrow widths
+            bool collapseRight = ActualWidth < 1050;
+            if (collapseRight)
+            {
+                RightColumn.Width = new GridLength(0);
+                LeftColumn.Width = new GridLength(1, GridUnitType.Star);
+                ArtistSectionBorder.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                RightColumn.Width = new GridLength(1, GridUnitType.Star);
+                LeftColumn.Width = new GridLength(1, GridUnitType.Star);
+                ArtistSectionBorder.Visibility = Visibility.Visible;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Error applying responsive layout");
+        }
     }
 
     private async Task ProcessArtistStationUrl(string url)
