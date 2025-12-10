@@ -1,88 +1,45 @@
-# SRXMDL - SiriusXM Downloader
+# SRXMDL – SiriusXM Monitor & Downloader
 
 ![SRXDL App](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/main.png)
 
-A powerful desktop application for downloading and managing SiriusXM content.
+Modern WPF app to monitor SiriusXM traffic, capture stream URLs, and download MP3/MP4/M3U8 with embedded metadata and cover art.
 
 ## Prerequisites
-
 - Active SiriusXM subscription
-- Google Chrome web browser
-- FFMPEG (for downloading and playing streams)
+- Google Chrome
+- .NET 9 SDK (for build/run)
+- ffmpeg (playback, downloads,conversions)
+- yt-dlp (M3U8 downloads)
+- pycryptodomex (optinal but yt-dlp will download AES protected m3u8's faster if installed)
 
-## Installation
-
-### Option 1: Download Latest Release
-Download the latest release from the releases page.
-
-### Option 2: Build from Source
+## Quick Start
 ```bash
-dotnet build
+dotnet run
 ```
 
 ## Setup
+1) Launch the app click Start Monetring and a Chrome window will open.
+2) Manually sign in to your SiriusXM account in that window.
+3) Once signed in, monitoring and capture begin automatically anything you play will be monitored and sent to the Sream Activity.
 
-1. Export your SiriusXM cookies to a JSON file or Netscape format
-2. Rename the file to either:
-   - `temp.json` (for JSON format)
-   - `temp.txt` (for Netscape format)
-3. Place the file in the cookies directory
+## What it does
+- **Network capture**: MP3, MP4, M3U8 streams .
+- **Stream activity**: Live table with track/artist/art, dedupe handling, copy/play/download actions.
+- **Downloads**:
+  - MP3: embedded title/artist + cover art (downloaded and muxed).
+  - WAV: title/artist, cover URL stored in comment.
+  - Optional filename; if blank, auto-uses “Artist - Track”.
+  - Status file `download_status.txt` indicates success/error (auto-cleaned after a delay).
+- **Artist stations**: Favorites, playback, info fetch.
+- **Lyrics**: On-demand lyrics window for now playing.(needs work )
+- **Responsive UI**: Dark theme, scaled layout, collapsible artist panel on narrow widths.
 
-The application will automatically load your cookies and sign you into your SiriusXM account.
 
-## Features
-
-- **Stream Detection**
-  - Supports MP4 and MP3 streams
-  - M3U8 stream support (coming soon)
-
-- **Stream Management**
-  - View stream activity with track names
-  - Fallback to "Unnamed MP4/MP3" when metadata is unavailable
-  - Multiple quality options for downloads
-
-- **Stream Actions**
-  - Copy stream URL
-  - Play stream directly
-  - Download stream in various quality options
-
-- **Artist Stations**
-  - Automatic addition to favorites when visiting artist station pages
-  - Direct playback from the application (FFPLAY)
-
-- **Now Playing Features**
-  - Lyrics display for currently playing songs
-  - Enhanced lyrics functionality (in development)
-
-## How it works
-
-SRXMDL operates by launching a Chrome browser instance in the background. Here's how the process works:
-
-1. **Authentication**
-   - Load your SiriusXM cookies into the application
-   - Automatic login to your SiriusXM account
-   - Note: Cookies need to be refreshed every 3-4 hours for optimal performance
-
-2. **Stream Detection**
-   - Monitors SiriusXM network traffic in real-time
-   - Identifies available media streams (MP4, MP3, M3U8)
-   - Extracts stream URLs for playback or download
-
-3. **Content Types**
-   - **Artist Stations**: MP4 streams that can be favorited and accessed from the Stations section
-   - **Podcasts**: Available in MP3 format (downloadable) and M3U8 format (coming soon)
-   - Favorites are automatically saved to `favorites.json`
-
-4. **Features**
-   - Direct playback of detected streams
-   - Download capability for MP3 and MP4 content
-   - M3U8 stream support is currently in development
+## Build
+```bash
+dotnet build
+```
+Full Channel Track list coming soon & Auto Sign in ⚠
 
 ## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-
-
-
-
+PRs welcome. Please include a brief description and any relevant reproduction steps for stream cases.***
