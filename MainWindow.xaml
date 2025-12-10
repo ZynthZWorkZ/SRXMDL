@@ -489,12 +489,12 @@
                     BorderBrush="#1A1C26"
                     BorderThickness="0,0,0,1"
                     MouseLeftButtonDown="Window_MouseLeftButtonDown">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0">
                         <Border Width="10" Height="10" CornerRadius="5" Background="#10B981" VerticalAlignment="Center"/>
                         <StackPanel Margin="8,0,0,0">
@@ -513,7 +513,7 @@
                         <Button x:Name="CloseButton" Content="" FontFamily="Segoe MDL2 Assets"
                                 Click="CloseButton_Click"
                                 Style="{StaticResource TitleBarCloseButton}" Margin="4,0,6,0"/>
-                    </StackPanel>
+                </StackPanel>
                 </Grid>
             </Border>
 
@@ -546,8 +546,8 @@
                         <StackPanel HorizontalAlignment="Center">
                             <TextBlock Text="CAPTURED" Foreground="White" FontSize="8" FontWeight="Bold" HorizontalAlignment="Center"/>
                             <TextBlock x:Name="TotalCapturedCount" Text="0" Foreground="White" FontSize="14" FontWeight="Black" HorizontalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
 

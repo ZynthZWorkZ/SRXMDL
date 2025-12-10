@@ -166,14 +166,14 @@
                 </Border>
                 <StackPanel Grid.Column="1" Margin="12,0,0,0">
                     <TextBlock Text="Download presets" 
-                               Foreground="{StaticResource TextPrimary}" 
+                           Foreground="{StaticResource TextPrimary}" 
                                FontSize="16" 
-                               FontWeight="Bold"
+                           FontWeight="Bold"
                                Margin="0,0,0,2"/>
                     <TextBlock Text="Pick a preset to start the download" 
-                               Foreground="{StaticResource TextSecondary}"
+                           Foreground="{StaticResource TextSecondary}"
                                FontSize="12"/>
-                </StackPanel>
+            </StackPanel>
                 <Button Grid.Column="2" Content="Close" Click="CloseButton_Click"
                         Style="{StaticResource PrimaryButton}"
                         Background="{StaticResource AccentRed}"
@@ -207,9 +207,10 @@
 
                 <StackPanel Grid.Column="2" Orientation="Vertical" HorizontalAlignment="Right">
                     <TextBlock Text="Format" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
-                    <ComboBox x:Name="FormatComboBox" Width="120" SelectedIndex="0">
+                    <ComboBox x:Name="FormatComboBox" Width="140" SelectedIndex="0">
                         <ComboBoxItem Content="MP3" IsSelected="True"/>
                         <ComboBoxItem Content="WAV"/>
+                        <ComboBoxItem Content="MP4"/>
                     </ComboBox>
                 </StackPanel>
             </Grid>
@@ -218,85 +219,85 @@
         <!-- Download Options -->
         <Border Grid.Row="2" Style="{StaticResource GlassCard}" Padding="0" Margin="0,0,0,12">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel>
+            <StackPanel>
                     <!-- Standard list-style rows inspired by the reference -->
                     <!-- Low -->
                     <Button Style="{StaticResource NeonRowButton}" Click="LowQualityDownload_Click" Padding="14,10" Background="Transparent" BorderThickness="0">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
                             <Border Width="32" Height="32" CornerRadius="8" Background="#F59E0B" VerticalAlignment="Center">
                                 <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
                             </Border>
                             <StackPanel Grid.Column="1" Margin="10,0,0,0">
                                 <TextBlock Text="Low Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
                                 <TextBlock Text="8-bit • 22.05 kHz • Mono" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
-                            </StackPanel>
+                        </StackPanel>
                             <TextBlock Grid.Column="2" Text="Voice" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        </Grid>
+                    </Grid>
                     </Button>
 
                     <!-- Standard -->
                     <Button Style="{StaticResource NeonRowButton}" Click="StandardQualityDownload_Click" Padding="14,10" Background="Transparent" BorderThickness="0">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
                             <Border Width="32" Height="32" CornerRadius="8" Background="#06B6D4" VerticalAlignment="Center">
                                 <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
                             </Border>
                             <StackPanel Grid.Column="1" Margin="10,0,0,0">
                                 <TextBlock Text="Standard Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
                                 <TextBlock Text="16-bit • 44.1 kHz • Stereo" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
-                            </StackPanel>
+                        </StackPanel>
                             <TextBlock Grid.Column="2" Text="Default" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        </Grid>
+                    </Grid>
                     </Button>
 
                     <!-- High -->
                     <Button Style="{StaticResource NeonRowButton}" Click="HighQualityDownload_Click" Padding="14,10" Background="Transparent" BorderThickness="0">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
                             <Border Width="32" Height="32" CornerRadius="8" Background="#8B5CF6" VerticalAlignment="Center">
                                 <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
                             </Border>
                             <StackPanel Grid.Column="1" Margin="10,0,0,0">
                                 <TextBlock Text="High Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
                                 <TextBlock Text="24-bit • 48 kHz • Stereo" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
-                            </StackPanel>
+                        </StackPanel>
                             <TextBlock Grid.Column="2" Text="Broadcast" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        </Grid>
+                    </Grid>
                     </Button>
 
                     <!-- Highest -->
                     <Button Style="{StaticResource NeonRowButton}" Click="HighestQualityDownload_Click" Padding="14,10" Background="Transparent" BorderThickness="0">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
                             <Border Width="32" Height="32" CornerRadius="8" Background="#EC4899" VerticalAlignment="Center">
                                 <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
                             </Border>
                             <StackPanel Grid.Column="1" Margin="10,0,0,0">
                                 <TextBlock Text="Highest Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
                                 <TextBlock Text="32-bit • 96 kHz • Stereo" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
-                            </StackPanel>
+                        </StackPanel>
                             <TextBlock Grid.Column="2" Text="Mastering" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        </Grid>
+                    </Grid>
                     </Button>
-                </StackPanel>
-            </ScrollViewer>
+            </StackPanel>
+        </ScrollViewer>
         </Border>
 
         <!-- Footer -->

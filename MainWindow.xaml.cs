@@ -1618,82 +1618,118 @@ public partial class MainWindow : Window
                     {
                         foreach (var stream in streamsElement.EnumerateArray())
                         {
-                            if (stream.TryGetProperty("metadata", out var metadata) &&
-                                metadata.TryGetProperty("artist", out var artist) &&
-                                artist.TryGetProperty("items", out var items) &&
-                                items.ValueKind == JsonValueKind.Array)
+                            if (stream.TryGetProperty("metadata", out var metadata))
                             {
-                                foreach (var item in items.EnumerateArray())
-                                {
-                                    if (item.TryGetProperty("name", out var nameElement) &&
-                                        item.TryGetProperty("artistName", out var artistNameElement))
-                                    {
-                                        var trackName = nameElement.GetString();
-                                        var artistName = artistNameElement.GetString();
+                                string trackName = "Unknown";
+                                string artistName = "Unknown";
+                                string preferredImageUrl = null;
 
-                                        if (stream.TryGetProperty("urls", out var urls) &&
-                                            urls.ValueKind == JsonValueKind.Array)
+                                // Primary: artist items (music)
+                                if (metadata.TryGetProperty("artist", out var artist) &&
+                                    artist.TryGetProperty("items", out var items) &&
+                                    items.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var item in items.EnumerateArray())
+                                    {
+                                        if (item.TryGetProperty("name", out var nameElement) &&
+                                            item.TryGetProperty("artistName", out var artistNameElement))
                                         {
-                                            foreach (var urlEntry in urls.EnumerateArray())
+                                            trackName = nameElement.GetString() ?? trackName;
+                                            artistName = artistNameElement.GetString() ?? artistName;
+
+                                            if (item.TryGetProperty("images", out var images) &&
+                                                images.TryGetProperty("tile", out var tile) &&
+                                                tile.TryGetProperty("aspect_1x1", out var aspect) &&
+                                                aspect.TryGetProperty("preferredImage", out var preferredImage) &&
+                                                preferredImage.TryGetProperty("url", out var imageUrl))
                                             {
-                                                if (urlEntry.TryGetProperty("url", out var urlElement) &&
-                                                    urlEntry.TryGetProperty("isPrimary", out var isPrimaryElement) &&
-                                                    isPrimaryElement.GetBoolean())
+                                                preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                                // Fallback: aod episodes (talk/podcast linear)
+                                else if (metadata.TryGetProperty("aod", out var aod) &&
+                                         aod.TryGetProperty("episode", out var episode))
+                                {
+                                    if (episode.TryGetProperty("name", out var epName))
+                                    {
+                                        trackName = epName.GetString() ?? trackName;
+                                    }
+
+                                    if (aod.TryGetProperty("channelName", out var channelNameProp))
+                                    {
+                                        artistName = channelNameProp.GetString() ?? artistName;
+                                    }
+                                    else if (episode.TryGetProperty("showName", out var showNameProp))
+                                    {
+                                        artistName = showNameProp.GetString() ?? artistName;
+                                    }
+
+                                    // images in episode.images
+                                    if (episode.TryGetProperty("images", out var epImages) &&
+                                        epImages.TryGetProperty("tile", out var tile) &&
+                                        tile.TryGetProperty("aspect_1x1", out var aspect) &&
+                                        aspect.TryGetProperty("preferredImage", out var preferredImage) &&
+                                        preferredImage.TryGetProperty("url", out var imageUrl))
+                                    {
+                                        preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
+                                    }
+                                    // fallback: showImages
+                                    else if (episode.TryGetProperty("showImages", out var showImages) &&
+                                             showImages.TryGetProperty("tile", out var sTile) &&
+                                             sTile.TryGetProperty("aspect_1x1", out var sAspect) &&
+                                             sAspect.TryGetProperty("preferredImage", out var sPreferred) &&
+                                             sPreferred.TryGetProperty("url", out var sUrl))
+                                    {
+                                        preferredImageUrl = StreamEntry.DecodeImageUrl(sUrl.GetString());
+                                    }
+                                }
+
+                                if (stream.TryGetProperty("urls", out var urls) &&
+                                    urls.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var urlEntry in urls.EnumerateArray())
+                                    {
+                                        if (urlEntry.TryGetProperty("url", out var urlElement) &&
+                                            urlEntry.TryGetProperty("isPrimary", out var isPrimaryElement) &&
+                                            isPrimaryElement.GetBoolean())
+                                        {
+                                            var streamUrl = urlElement.GetString();
+                                            StreamEntry existingEntry;
+                                            // Check if this is a duplicate file
+                                            if (IsDuplicateStream(streamUrl, out existingEntry))
+                                            {
+                                                // If the existing entry is unnamed, update it with the title information
+                                                if (existingEntry.TrackName == "Unnamed MP4")
                                                 {
-                                                    var streamUrl = urlElement.GetString();
-                                                    StreamEntry existingEntry;
-                                                    // Check if this is a duplicate file
-                                                    if (IsDuplicateStream(streamUrl, out existingEntry))
-                                                    {
-                                                        // If the existing entry is unnamed, update it with the title information
-                                                        if (existingEntry.TrackName == "Unnamed MP4")
-                                                        {
-                                                            await Dispatcher.InvokeAsync(() =>
-                                                            {
-                                                                existingEntry.TrackName = trackName;
-                                                                existingEntry.ArtistName = artistName;
-                                                                // Refresh the ListView to show the updated information
-                                                                StreamListView.Items.Refresh();
-                                                            });
-                                                            Log.Information("Updated unnamed entry with title: {TrackName} - {ArtistName}", trackName, artistName);
-                                                        }
-                                                        Log.Debug("Skipping duplicate stream URL: {Url}", streamUrl);
-                                                        continue;
-                                                    }
                                                     await Dispatcher.InvokeAsync(() =>
                                                     {
-                                                        string preferredImageUrl = null;
-                                                        if (stream.TryGetProperty("metadata", out var metadata) &&
-                                                            metadata.TryGetProperty("artist", out var artist) &&
-                                                            artist.TryGetProperty("items", out var items) &&
-                                                            items.ValueKind == JsonValueKind.Array &&
-                                                            items.GetArrayLength() > 0)
-                                                        {
-                                                            var firstItem = items[0];
-                                                            if (firstItem.TryGetProperty("images", out var images) &&
-                                                                images.TryGetProperty("tile", out var tile) &&
-                                                                tile.TryGetProperty("aspect_1x1", out var aspect) &&
-                                                                aspect.TryGetProperty("preferredImage", out var preferredImage) &&
-                                                                preferredImage.TryGetProperty("url", out var imageUrl))
-                                                            {
-                                                                preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
-                                                            }
-                                                        }
-
-                                                        streamEntries.Add(new StreamEntry
-                                                        {
-                                                            Timestamp = DateTime.Now.ToString("HH:mm:ss"),
-                                                            StreamType = "mp4",
-                                                            Url = streamUrl,
-                                                            TrackName = trackName,
-                                                            ArtistName = artistName,
-                                                            PreferredImageUrl = preferredImageUrl
-                                                        });
-                                                        UpdateTotalCapturedCount();
+                                                        existingEntry.TrackName = trackName;
+                                                        existingEntry.ArtistName = artistName;
+                                                        existingEntry.PreferredImageUrl = preferredImageUrl ?? existingEntry.PreferredImageUrl;
+                                                        StreamListView.Items.Refresh();
                                                     });
-                                                    break;
+                                                    Log.Information("Updated unnamed entry with title: {TrackName} - {ArtistName}", trackName, artistName);
                                                 }
+                                                Log.Debug("Skipping duplicate stream URL: {Url}", streamUrl);
+                                                continue;
                                             }
+                                            await Dispatcher.InvokeAsync(() =>
+                                            {
+                                                streamEntries.Add(new StreamEntry
+                                                {
+                                                    Timestamp = DateTime.Now.ToString("HH:mm:ss"),
+                                                    StreamType = "mp4",
+                                                    Url = streamUrl,
+                                                    TrackName = trackName,
+                                                    ArtistName = artistName,
+                                                    PreferredImageUrl = preferredImageUrl
+                                                });
+                                                UpdateTotalCapturedCount();
+                                            });
+                                            break;
                                         }
                                     }
                                 }

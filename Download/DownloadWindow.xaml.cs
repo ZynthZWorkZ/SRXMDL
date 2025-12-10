@@ -16,7 +16,7 @@ namespace SRXMDL.Download
         private readonly string _trackName;
         private readonly string _artistName;
         private readonly string _imageUrl;
-        private enum AudioFormat { Mp3, Wav }
+        private enum AudioFormat { Mp3, Wav, Mp4 }
 
         public DownloadWindow(string audioUrl, string trackName, string artistName, string imageUrl)
         {
@@ -101,15 +101,16 @@ namespace SRXMDL.Download
 
         private async Task RunDownloadPreset(string qualityKey, string wavCodec, string mp3Bitrate)
         {
+            var format = GetSelectedFormat();
+
             // If this is an M3U8 stream, use yt-dlp + captured key/bearer
             if (_audioUrl?.IndexOf(".m3u8", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 var baseName = GetSanitizedBaseName();
-                await RunM3u8WithYtDlpAsync(baseName);
+                await RunM3u8WithYtDlpAsync(baseName, format);
                 return;
             }
 
-            var format = GetSelectedFormat();
             var outputFile = GetOutputFilename(qualityKey, format);
             string tempCoverPath = null;
 
@@ -125,6 +126,8 @@ namespace SRXMDL.Download
             var content = selected?.Content as string;
             if (string.Equals(content, "wav", StringComparison.OrdinalIgnoreCase))
                 return AudioFormat.Wav;
+            if (string.Equals(content, "mp4", StringComparison.OrdinalIgnoreCase))
+                return AudioFormat.Mp4;
             return AudioFormat.Mp3;
         }
 
@@ -184,7 +187,7 @@ namespace SRXMDL.Download
             }
         }
 
-        private async Task RunM3u8WithYtDlpAsync(string baseName)
+        private async Task RunM3u8WithYtDlpAsync(string baseName, AudioFormat format)
         {
             // Load bearer and key
             var bearer = await LoadBearerAsync();
@@ -196,7 +199,8 @@ namespace SRXMDL.Download
                 return;
             }
 
-            var outputTemplate = $"{baseName}.%(ext)s";
+            var ext = format == AudioFormat.Mp4 ? "mp4" : "%(ext)s";
+            var outputTemplate = $"{baseName}.{ext}";
             var origin = "https://www.siriusxm.com";
             var referer = "https://www.siriusxm.com";
 
@@ -208,10 +212,21 @@ namespace SRXMDL.Download
             cmd.Append($"--add-header \"Referer: {referer}\" ");
             cmd.Append($"--extractor-args \"generic:hls_key={hlsKeyHex}\" ");
             cmd.Append("--downloader-args \"ffmpeg:--hls-use-mpegts\" ");
-            cmd.Append("-f bestaudio/best ");
-            cmd.Append("-x ");
-            cmd.Append("--embed-metadata ");
-            cmd.Append($"-o \"{outputTemplate}\"");
+            if (format == AudioFormat.Mp4)
+            {
+                // Keep video; best overall; no audio extraction
+                cmd.Append("-f bestvideo+bestaudio/best ");
+                cmd.Append("--embed-metadata ");
+                cmd.Append($"-o \"{outputTemplate}\"");
+            }
+            else
+            {
+                // Audio-only path (mp3/wav) using extraction
+                cmd.Append("-f bestaudio/best ");
+                cmd.Append("-x ");
+                cmd.Append("--embed-metadata ");
+                cmd.Append($"-o \"{outputTemplate}\"");
+            }
 
             ExecuteProcessCommand(cmd.ToString(), null);
         }

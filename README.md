@@ -23,14 +23,17 @@ Or
 ```bash
 dotnet build
 ```
+## Or Just Download Latest
 
-## Setup
-1) Launch the app click Start Monetring and a Chrome window will open.
+
+## Setup & Usage
+1) Launch the app click Start Monitoring and a Chrome window will open.
 2) Manually sign in to your SiriusXM account in that window.
 3) Once signed in, monitoring and capture begin automatically anything you play will be monitored and sent to the Stream Activity.
+4) Captured Streams will have a Copy URL , Download & Play Button  (note some streams wont have the Play button due to AES Encryption)
 
 ## What it does
-- **Network capture**: MP3, MP4, M3U8 streams .
+- **Network capture**: MP3, MP4, M3U8 Audio streams ,M3U8 Video streams
 - **Stream activity**: Live table with track/artist/art, dedupe handling, copy/play/download actions.
 - **Downloads**:
   - MP3: embedded title/artist + cover art (downloaded and muxed).
@@ -42,8 +45,10 @@ dotnet build
 - **Responsive UI**: Dark theme, scaled layout, collapsible artist panel on narrow widths.
 
 
+Currently Working & Improving on :
 
-Full Channel Track list coming soon & Auto Sign in ⚠
-
-## Contributing
-PRs welcome. Please include a brief description and any relevant reproduction steps for stream cases.***
+🛠Better Metadata Captures 
+🛠Faster Logins
+🛠Full Channel Track list coming soon  
+🛠Mac OS Version 
+🛠CLI commands
