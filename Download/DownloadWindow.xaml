@@ -207,7 +207,7 @@
 
                 <StackPanel Grid.Column="2" Orientation="Vertical" HorizontalAlignment="Right">
                     <TextBlock Text="Format" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
-                    <ComboBox x:Name="FormatComboBox" Width="140" SelectedIndex="0">
+                    <ComboBox x:Name="FormatComboBox" Width="140" SelectedIndex="0" SelectionChanged="FormatComboBox_SelectionChanged">
                         <ComboBoxItem Content="MP3" IsSelected="True"/>
                         <ComboBoxItem Content="WAV"/>
                         <ComboBoxItem Content="MP4"/>
@@ -233,8 +233,8 @@
                                 <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
                             </Border>
                             <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                <TextBlock Text="Low Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
-                                <TextBlock Text="8-bit • 22.05 kHz • Mono" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+                                <TextBlock x:Name="LowTitle" Text="Low Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="LowSubtitle" Text="8-bit • 22.05 kHz • Mono" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
                         </StackPanel>
                             <TextBlock Grid.Column="2" Text="Voice" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
                     </Grid>
@@ -252,8 +252,8 @@
                                 <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
                             </Border>
                             <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                <TextBlock Text="Standard Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
-                                <TextBlock Text="16-bit • 44.1 kHz • Stereo" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+                                <TextBlock x:Name="StandardTitle" Text="Standard Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="StandardSubtitle" Text="16-bit • 44.1 kHz • Stereo" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
                         </StackPanel>
                             <TextBlock Grid.Column="2" Text="Default" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
                     </Grid>
@@ -271,8 +271,8 @@
                                 <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
                             </Border>
                             <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                <TextBlock Text="High Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
-                                <TextBlock Text="24-bit • 48 kHz • Stereo" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+                                <TextBlock x:Name="HighTitle" Text="High Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="HighSubtitle" Text="24-bit • 48 kHz • Stereo" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
                         </StackPanel>
                             <TextBlock Grid.Column="2" Text="Broadcast" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
                     </Grid>
@@ -290,8 +290,8 @@
                                 <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
                             </Border>
                             <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                <TextBlock Text="Highest Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
-                                <TextBlock Text="32-bit • 96 kHz • Stereo" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
+                                <TextBlock x:Name="HighestTitle" Text="Highest Quality" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="HighestSubtitle" Text="32-bit • 96 kHz • Stereo" Foreground="{StaticResource TextSecondary}" FontSize="11"/>
                         </StackPanel>
                             <TextBlock Grid.Column="2" Text="Mastering" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
                     </Grid>

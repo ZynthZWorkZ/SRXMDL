@@ -19,10 +19,12 @@ using System.Threading.Tasks;
 using OpenQA.Selenium.Support.UI;
 using System.Net.Http;
 using System.Windows.Shapes;
+using SRXMDL.Login;
 using System.Windows.Input;
 using SRXMDL.Artist;
 using SRXMDL.Download;
 using SRXMDL.Lyrics;
+using IOPath = System.IO.Path;
 
 namespace SRXMDL;
 
@@ -46,6 +48,8 @@ public partial class MainWindow : Window
     private const double BaseHeight = 800;
     private const double MinScale = 0.7;
     private const double MaxScale = 1.0;
+    private bool _captureBearer = false;
+    private bool _autoLoginStarted = false;
     public bool IsMonitoring
     {
         get => _isMonitoring;
@@ -53,6 +57,125 @@ public partial class MainWindow : Window
         {
             _isMonitoring = value;
             artistStations?.SetMonitoringStatus(value);
+        }
+    }
+
+    private bool TryImportCookies(ChromeDriver chromeDriver, string cookieFile)
+    {
+        if (chromeDriver == null) return false;
+        if (!File.Exists(cookieFile)) return false;
+
+        var lines = File.ReadAllLines(cookieFile)
+                        .Where(l => !string.IsNullOrWhiteSpace(l) && !l.TrimStart().StartsWith("#"))
+                        .ToList();
+
+        if (!lines.Any()) return false;
+
+        var epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var cookiesByDomain = new Dictionary<string, List<Cookie>>();
+
+        foreach (var line in lines)
+        {
+            var parts = line.Split('\t');
+            if (parts.Length != 7) continue;
+
+            var domain = parts[0];
+            var path = parts[2];
+            var secureFlag = parts[3];
+            var expiresStr = parts[4];
+            var name = parts[5];
+            var value = parts[6];
+
+            DateTime? expires = null;
+            if (long.TryParse(expiresStr, out var expSeconds) && expSeconds > 0)
+            {
+                expires = epoch.AddSeconds(expSeconds);
+                if (expires <= DateTime.UtcNow)
+                {
+                    continue; // expired
+                }
+            }
+
+            var isSecure = secureFlag.Equals("TRUE", StringComparison.OrdinalIgnoreCase);
+            var cookie = new Cookie(name, value, domain, path, expires);
+            if (!cookiesByDomain.ContainsKey(domain))
+            {
+                cookiesByDomain[domain] = new List<Cookie>();
+            }
+            cookiesByDomain[domain].Add(cookie);
+        }
+
+        if (!cookiesByDomain.Any()) return false;
+
+        foreach (var kvp in cookiesByDomain)
+        {
+            var domain = kvp.Key.TrimStart('.');
+            var targetUrl = $"https://{domain}";
+            try
+            {
+                chromeDriver.Navigate().GoToUrl(targetUrl);
+                foreach (var c in kvp.Value)
+                {
+                    try { chromeDriver.Manage().Cookies.AddCookie(c); }
+                    catch (Exception ex) { Log.Debug(ex, "Skipping cookie {CookieName}", c.Name); }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "Skipping domain while importing cookies: {Domain}", domain);
+            }
+        }
+
+        return true;
+    }
+
+    private async Task AttemptAutoLoginWithCreds(string bearerToken)
+    {
+        if (_autoLoginStarted) return;
+        _autoLoginStarted = true;
+        try
+        {
+            var cred = CredentialStore.Load();
+            if (cred == null)
+            {
+                Log.Information("Login cred.json not found or invalid; skipping auto login.");
+                return;
+            }
+
+            using var svc = new SiriusXmLoginService();
+            var session = await svc.LoginAsync(cred.Value.Email, cred.Value.Password, bearerToken.Replace("Bearer ", "", StringComparison.OrdinalIgnoreCase));
+            if (session != null)
+            {
+                var cookies = svc.ExportCookiesNetscapeFormat();
+                await File.WriteAllTextAsync("cookies-siriusxm-com.txt", cookies);
+                Log.Information("Auto login succeeded and cookies saved to cookies-siriusxm-com.txt");
+                if (driver != null)
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            if (TryImportCookies(driver, "cookies-siriusxm-com.txt"))
+                            {
+                                driver.Navigate().GoToUrl("https://www.siriusxm.com/player/home");
+                                StatusText.Text = "Session restored from fresh cookies";
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warning(ex, "Error importing fresh cookies into live driver");
+                        }
+                    });
+                }
+            }
+            else
+            {
+                Log.Warning("Auto login failed; session is null.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error during auto login with captured credentials");
         }
     }
     private ObservableCollection<StreamEntry> streamEntries;
@@ -287,6 +410,19 @@ public partial class MainWindow : Window
             StatusText.Text = "Starting...";
             IsMonitoring = true;
             streamEntries.Clear();
+            bool cookiesImported = false;
+            if (File.Exists("cookies-siriusxm-com.txt"))
+            {
+                try
+                {
+                    cookiesImported = TryImportCookies(driver, "cookies-siriusxm-com.txt");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Error importing cookies; will capture bearer");
+                }
+            }
+            _captureBearer = !cookiesImported;
             
             // Instead of clearing all entries, only clear non-favorites
             var nonFavorites = artistEntries.Where(a => !a.IsFavorite).ToList();
@@ -313,10 +449,17 @@ public partial class MainWindow : Window
             artistStations = new ArtistStations(driver, Dispatcher, artistEntries);
             artistStations.ArtistListView = ArtistListView;
 
-            // Navigate directly to the player page for manual login
-            await NavigateWithRetry(driver, "https://www.siriusxm.com/player/home");
+            if (cookiesImported)
+            {
+                await NavigateWithRetry(driver, "https://www.siriusxm.com/player/home");
+                StatusText.Text = "Browser opened with cookies - verifying session";
+            }
+            else
+            {
+                await NavigateWithRetry(driver, "https://www.siriusxm.com/player/login");
+                StatusText.Text = "Browser opened - please login manually";
+            }
 
-            StatusText.Text = "Browser opened - please login manually";
             Log.Information("Browser is now open. User can login manually and monitoring will begin automatically.");
 
             // Start monitoring in background
@@ -1150,6 +1293,45 @@ public partial class MainWindow : Window
                                             Log.Warning("Missing auth token for playback key request; skipping fetch.");
                                         }
                                     }
+                                    // Capture bearer from user-event submit when cookies are missing
+                                    else if (_captureBearer && url.Contains("api.edge-gateway.siriusxm.com/user-event/v1/events/submit"))
+                                    {
+                                        try
+                                        {
+                                            string bearerToken = null;
+
+                                            var submitRequestLog = logs.FirstOrDefault(l =>
+                                            {
+                                                var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
+                                                return entry?.Message?.Method == "Network.requestWillBeSent" &&
+                                                       entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
+                                            });
+
+                                        if (submitRequestLog != null)
+                                            {
+                                                var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(submitRequestLog.Message);
+                                                if (requestEntry?.Message?.Params?.Request?.Headers != null &&
+                                                    requestEntry.Message.Params.Request.Headers.TryGetValue("Authorization", out var authHeader) &&
+                                                    authHeader.StartsWith("Bearer", StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    bearerToken = authHeader;
+                                                }
+                                            }
+
+                                            if (!string.IsNullOrWhiteSpace(bearerToken))
+                                            {
+                                                Directory.CreateDirectory("Login");
+                                                await File.WriteAllTextAsync("Login/authorization Bearer.txt", bearerToken);
+                                                _captureBearer = false;
+                                                _ = Task.Run(() => AttemptAutoLoginWithCreds(bearerToken));
+                                                Log.Information("Captured bearer token from user-event submit and saved to Login/authorization Bearer.txt");
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            Log.Error(ex, "Error capturing bearer token from user-event submit");
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1231,13 +1413,58 @@ public partial class MainWindow : Window
         }
     }
 
+    private void LoginButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var win = new LoginWindow();
+            win.Owner = this;
+            win.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error opening login window");
+            StatusText.Text = "Error opening login window";
+        }
+    }
+
 
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
         stationFeedbackWatcher?.Dispose();
         StopMonitoring().Wait();
+        ClearSensitiveFiles();
         Log.CloseAndFlush();
+    }
+
+    private void ClearSensitiveFiles()
+    {
+        try
+        {
+            ClearFileContents(IOPath.Combine("Login", "authorization Bearer.txt"));
+            ClearFileContents(IOPath.Combine("Artist", "ArtistAuth.txt"));
+            ClearFileContents(IOPath.Combine("HLSKey", "authorization Bearer.txt"));
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "ClearSensitiveFiles encountered an error");
+        }
+    }
+
+    private void ClearFileContents(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.WriteAllText(path, string.Empty);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Failed to clear {Path}", path);
+        }
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -1653,14 +1880,14 @@ public partial class MainWindow : Window
 
                                 // Primary: artist items (music)
                                 if (metadata.TryGetProperty("artist", out var artist) &&
-                                    artist.TryGetProperty("items", out var items) &&
-                                    items.ValueKind == JsonValueKind.Array)
+                                artist.TryGetProperty("items", out var items) &&
+                                items.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var item in items.EnumerateArray())
                                 {
-                                    foreach (var item in items.EnumerateArray())
+                                    if (item.TryGetProperty("name", out var nameElement) &&
+                                        item.TryGetProperty("artistName", out var artistNameElement))
                                     {
-                                        if (item.TryGetProperty("name", out var nameElement) &&
-                                            item.TryGetProperty("artistName", out var artistNameElement))
-                                        {
                                             trackName = nameElement.GetString() ?? trackName;
                                             artistName = artistNameElement.GetString() ?? artistName;
 
@@ -1714,49 +1941,49 @@ public partial class MainWindow : Window
                                     }
                                 }
 
-                                if (stream.TryGetProperty("urls", out var urls) &&
-                                    urls.ValueKind == JsonValueKind.Array)
-                                {
-                                    foreach (var urlEntry in urls.EnumerateArray())
-                                    {
-                                        if (urlEntry.TryGetProperty("url", out var urlElement) &&
-                                            urlEntry.TryGetProperty("isPrimary", out var isPrimaryElement) &&
-                                            isPrimaryElement.GetBoolean())
+                                        if (stream.TryGetProperty("urls", out var urls) &&
+                                            urls.ValueKind == JsonValueKind.Array)
                                         {
-                                            var streamUrl = urlElement.GetString();
-                                            StreamEntry existingEntry;
-                                            // Check if this is a duplicate file
-                                            if (IsDuplicateStream(streamUrl, out existingEntry))
+                                            foreach (var urlEntry in urls.EnumerateArray())
                                             {
-                                                // If the existing entry is unnamed, update it with the title information
-                                                if (existingEntry.TrackName == "Unnamed MP4")
+                                                if (urlEntry.TryGetProperty("url", out var urlElement) &&
+                                                    urlEntry.TryGetProperty("isPrimary", out var isPrimaryElement) &&
+                                                    isPrimaryElement.GetBoolean())
                                                 {
+                                                    var streamUrl = urlElement.GetString();
+                                                    StreamEntry existingEntry;
+                                                    // Check if this is a duplicate file
+                                                    if (IsDuplicateStream(streamUrl, out existingEntry))
+                                                    {
+                                                        // If the existing entry is unnamed, update it with the title information
+                                                        if (existingEntry.TrackName == "Unnamed MP4")
+                                                        {
+                                                            await Dispatcher.InvokeAsync(() =>
+                                                            {
+                                                                existingEntry.TrackName = trackName;
+                                                                existingEntry.ArtistName = artistName;
+                                                        existingEntry.PreferredImageUrl = preferredImageUrl ?? existingEntry.PreferredImageUrl;
+                                                                StreamListView.Items.Refresh();
+                                                            });
+                                                            Log.Information("Updated unnamed entry with title: {TrackName} - {ArtistName}", trackName, artistName);
+                                                        }
+                                                        Log.Debug("Skipping duplicate stream URL: {Url}", streamUrl);
+                                                        continue;
+                                                    }
                                                     await Dispatcher.InvokeAsync(() =>
                                                     {
-                                                        existingEntry.TrackName = trackName;
-                                                        existingEntry.ArtistName = artistName;
-                                                        existingEntry.PreferredImageUrl = preferredImageUrl ?? existingEntry.PreferredImageUrl;
-                                                        StreamListView.Items.Refresh();
+                                                        streamEntries.Add(new StreamEntry
+                                                        {
+                                                            Timestamp = DateTime.Now.ToString("HH:mm:ss"),
+                                                            StreamType = "mp4",
+                                                            Url = streamUrl,
+                                                            TrackName = trackName,
+                                                            ArtistName = artistName,
+                                                            PreferredImageUrl = preferredImageUrl
+                                                        });
+                                                        UpdateTotalCapturedCount();
                                                     });
-                                                    Log.Information("Updated unnamed entry with title: {TrackName} - {ArtistName}", trackName, artistName);
-                                                }
-                                                Log.Debug("Skipping duplicate stream URL: {Url}", streamUrl);
-                                                continue;
-                                            }
-                                            await Dispatcher.InvokeAsync(() =>
-                                            {
-                                                streamEntries.Add(new StreamEntry
-                                                {
-                                                    Timestamp = DateTime.Now.ToString("HH:mm:ss"),
-                                                    StreamType = "mp4",
-                                                    Url = streamUrl,
-                                                    TrackName = trackName,
-                                                    ArtistName = artistName,
-                                                    PreferredImageUrl = preferredImageUrl
-                                                });
-                                                UpdateTotalCapturedCount();
-                                            });
-                                            break;
+                                                    break;
                                         }
                                     }
                                 }

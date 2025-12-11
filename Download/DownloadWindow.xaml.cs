@@ -27,6 +27,7 @@ namespace SRXMDL.Download
             _imageUrl = imageUrl ?? string.Empty;
             // Prefill with suggested name (optional)
             OutputFilenameTextBox.Text = BuildBaseName();
+            FormatComboBox_SelectionChanged(null, null);
         }
 
         private string GetOutputFilename(string quality, AudioFormat format)
@@ -129,6 +130,35 @@ namespace SRXMDL.Download
             if (string.Equals(content, "mp4", StringComparison.OrdinalIgnoreCase))
                 return AudioFormat.Mp4;
             return AudioFormat.Mp3;
+        }
+
+        private void FormatComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            var format = GetSelectedFormat();
+            if (format == AudioFormat.Mp4)
+            {
+                SetTitles("MP4 (Best available)", "Video + Audio mux", "MP4 (Best available)", "Video + Audio mux",
+                          "MP4 (Best available)", "Video + Audio mux", "MP4 (Best available)", "Video + Audio mux");
+            }
+            else
+            {
+                SetTitles("Low Quality", "8-bit • 22.05 kHz • Mono",
+                          "Standard Quality", "16-bit • 44.1 kHz • Stereo",
+                          "High Quality", "24-bit • 48 kHz • Stereo",
+                          "Highest Quality", "32-bit • 96 kHz • Stereo");
+            }
+        }
+
+        private void SetTitles(string lowTitle, string lowSub, string stdTitle, string stdSub, string hiTitle, string hiSub, string maxTitle, string maxSub)
+        {
+            if (LowTitle != null) LowTitle.Text = lowTitle;
+            if (LowSubtitle != null) LowSubtitle.Text = lowSub;
+            if (StandardTitle != null) StandardTitle.Text = stdTitle;
+            if (StandardSubtitle != null) StandardSubtitle.Text = stdSub;
+            if (HighTitle != null) HighTitle.Text = hiTitle;
+            if (HighSubtitle != null) HighSubtitle.Text = hiSub;
+            if (HighestTitle != null) HighestTitle.Text = maxTitle;
+            if (HighestSubtitle != null) HighestSubtitle.Text = maxSub;
         }
 
         private async Task<(string command, string? tempCoverPath)> BuildFfmpegCommandAsync(AudioFormat format, string wavCodec, string mp3Bitrate, string outputFile)

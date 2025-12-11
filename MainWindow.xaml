@@ -504,6 +504,10 @@
                     </StackPanel>
                     
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                        <Button x:Name="LoginButton" Content="" FontFamily="Segoe MDL2 Assets"
+                                ToolTip="Login"
+                                Click="LoginButton_Click"
+                                Style="{StaticResource TitleBarButton}" Margin="4,0"/>
                         <Button x:Name="MinimizeButton" Content="" FontFamily="Segoe MDL2 Assets"
                                 Click="MinimizeButton_Click"
                                 Style="{StaticResource TitleBarButton}" Margin="4,0"/>
