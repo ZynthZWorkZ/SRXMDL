@@ -64,17 +64,18 @@ dotnet build
 
 ## Usage
 1. Launch the app and click **Start Monitoring** - a Chrome window will open.
-(https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/STM.png)
+   
+   ![Start Monitoring](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/STM.png)
 
 2. Enter your SiriusXM credentials in the login window. Your password will be saved as a hash for future use and security.
-
-(https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/LG.png)
-(https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/LGW.png)
+   
+   ![Login Window](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/LG.png)
+   ![Login Window With Credentials](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/LGW.png)
 
 3. After entering your credentials, start monitoring. The app will create a cookie file for automatic login on future sessions.
 4. Once auto-logged in, simply use the app normally. Capture begins automatically - anything you play will be monitored and sent to the Stream Activity.
-
-(https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/SA1.png)
+   
+   ![Stream Activity](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/SA1.png)
 
 5. Captured streams will have the following action buttons:
    - **Copy URL**: Copy the stream URL to your clipboard
@@ -84,8 +85,14 @@ dotnet build
 6. In the download window, you can:
    - Select different audio quality options for audio streams
    - For video streams, select **MP4** format from the dropdown menu
+   
+   ![Download Window](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/DLW.png)
 
-(https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/DLW.png)
+7. When you visit any artist page in SiriusXM, the artist will automatically appear in the Artist window for easy access and favoriting.
+   
+   ![Artist Window](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/AS.png)
+
+
 
 Currently Working & Improving on :
 
