@@ -63,14 +63,14 @@ dotnet build
 
 
 ## Usage
-1. Launch the app and click **Start Monitoring** - a Chrome window will open.
-   
-   ![Start Monitoring](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/STM.png)
-
-2. Enter your SiriusXM credentials in the login window. Your password will be saved as a hash for future use and security.
+1. Enter your SiriusXM credentials in the login window. Your password will be saved as a hash for future use and security.
    
    ![Login Window](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/LG.png)
    ![Login Window With Credentials](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/LGW.png)
+
+2. Launch the app and click **Start Monitoring** - a Chrome window will open.
+   
+   ![Start Monitoring](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/STM.png)
 
 3. After entering your credentials, start monitoring. The app will create a cookie file for automatic login on future sessions.
 4. Once auto-logged in, simply use the app normally. Capture begins automatically - anything you play will be monitored and sent to the Stream Activity.
