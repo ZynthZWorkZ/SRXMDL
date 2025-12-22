@@ -38,6 +38,8 @@ public partial class MainWindow : Window
     private bool _isMonitoring = false;
     private bool _isPaused = false;
     private NowPlaying currentTrack;
+    private DateTime _lastControlClick = DateTime.MinValue;
+    private const int CONTROL_CLICK_DEBOUNCE_MS = 500; // Prevent rapid clicks
     private DispatcherTimer nowPlayingTimer;
     private FileSystemWatcher? stationFeedbackWatcher;
     private string? lastTuneSourceUrl;
@@ -440,6 +442,38 @@ public partial class MainWindow : Window
             // Initialize Chrome options
             var options = new ChromeOptions();
             options.AddArgument("--start-maximized");
+            
+            // Suppress GCM registration errors and background networking
+            options.AddArgument("--disable-background-networking");
+            options.AddArgument("--disable-background-timer-throttling");
+            options.AddArgument("--disable-backgrounding-occluded-windows");
+            options.AddArgument("--disable-breakpad");
+            options.AddArgument("--disable-client-side-phishing-detection");
+            options.AddArgument("--disable-component-extensions-with-background-pages");
+            options.AddArgument("--disable-default-apps");
+            options.AddArgument("--disable-dev-shm-usage");
+            options.AddArgument("--disable-extensions");
+            options.AddArgument("--disable-features=TranslateUI");
+            options.AddArgument("--disable-hang-monitor");
+            options.AddArgument("--disable-ipc-flooding-protection");
+            options.AddArgument("--disable-popup-blocking");
+            options.AddArgument("--disable-prompt-on-repost");
+            options.AddArgument("--disable-renderer-backgrounding");
+            options.AddArgument("--disable-sync");
+            options.AddArgument("--disable-translate");
+            options.AddArgument("--disable-web-resources");
+            options.AddArgument("--metrics-recording-only");
+            options.AddArgument("--no-first-run");
+            options.AddArgument("--safebrowsing-disable-auto-update");
+            options.AddArgument("--enable-automation");
+            options.AddArgument("--password-store=basic");
+            options.AddArgument("--use-mock-keychain");
+            // Note: --mute-audio removed - we need audio for SiriusXM playback!
+            
+            // Suppress error logging for GCM/deprecated endpoints
+            options.AddExcludedArgument("enable-logging");
+            options.AddArgument("--log-level=3"); // Only show fatal errors
+            
             options.SetLoggingPreference(LogType.Performance, LogLevel.All);
 
             // Initialize Chrome driver
@@ -2005,91 +2039,269 @@ public partial class MainWindow : Window
 
     private async void PauseButton_Click(object sender, RoutedEventArgs e)
     {
+        // Debounce rapid clicks
+        if ((DateTime.Now - _lastControlClick).TotalMilliseconds < CONTROL_CLICK_DEBOUNCE_MS)
+            return;
+        _lastControlClick = DateTime.Now;
+
         if (driver == null || !IsMonitoring) return;
+
+        // Disable button temporarily to prevent double-clicks
+        if (sender is Button button)
+        {
+            button.IsEnabled = false;
+        }
 
         try
         {
-            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
-            
-            if (!_isPaused)
+            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+            IWebElement? targetButton = null;
+            bool shouldPause = !_isPaused;
+
+            // Try multiple strategies to find the button
+            var strategies = new List<Func<IWebDriver, IWebElement?>>
             {
-                // Find and click pause button
-                var pauseButton = wait.Until(d => d.FindElement(By.CssSelector("button[aria-label='Pause']")));
-                pauseButton.Click();
-                StatusText.Text = "Playback paused";
-                
-                // Update button to show play icon
-                if (sender is Button button)
+                // Strategy 1: aria-label
+                d => {
+                    try
+                    {
+                        return d.FindElement(By.CssSelector($"button[aria-label='{(shouldPause ? "Pause" : "Play")}']"));
+                    }
+                    catch { return null; }
+                },
+                // Strategy 2: aria-label case insensitive
+                d => {
+                    try
+                    {
+                        var buttons = d.FindElements(By.TagName("button"));
+                        var searchTerm = shouldPause ? "Pause" : "Play";
+                        return buttons.FirstOrDefault(b => 
+                        {
+                            var ariaLabel = b.GetAttribute("aria-label");
+                            return !string.IsNullOrEmpty(ariaLabel) && 
+                                   ariaLabel.Contains(searchTerm, StringComparison.OrdinalIgnoreCase);
+                        });
+                    }
+                    catch { return null; }
+                },
+                // Strategy 3: SVG path matching
+                d => {
+                    try
+                    {
+                        var svgPath = shouldPause 
+                            ? "M7 2.754a2 2 0 0 0-2 2v14.492a2 2 0 0 0 4 0V4.754a2 2 0 0 0-2-2m10 0a2 2 0 0 0-2 2v14.492a2 2 0 0 0 4 0V4.754a2 2 0 0 0-2-2"
+                            : "M20.692 10.702c1 .577 1 2.02 0 2.598L7.19 21.094a1.5 1.5 0 0 1-2.25-1.299V4.206a1.5 1.5 0 0 1 2.25-1.298z";
+                        var path = d.FindElement(By.CssSelector($"svg path[d*='{svgPath.Substring(0, 20)}']"));
+                        return path.FindElement(By.XPath("./ancestor::button"));
+                    }
+                    catch { return null; }
+                }
+            };
+
+            // Try each strategy with retries
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                foreach (var strategy in strategies)
                 {
-                    var pauseIcon = button.FindName("PauseIcon") as System.Windows.Shapes.Path;
-                    var playIcon = button.FindName("PlayIcon") as System.Windows.Shapes.Path;
+                    try
+                    {
+                        targetButton = wait.Until(d =>
+                        {
+                            var element = strategy(d);
+                            if (element != null && element.Displayed && element.Enabled)
+                            {
+                                return element;
+                            }
+                            return null;
+                        });
+
+                        if (targetButton != null) break;
+                    }
+                    catch { }
+                }
+
+                if (targetButton != null) break;
+                await Task.Delay(300 * (attempt + 1)); // Exponential backoff
+            }
+
+            if (targetButton == null)
+            {
+                await Dispatcher.InvokeAsync(() => StatusText.Text = "Could not find play/pause button");
+                Log.Warning("Could not find play/pause button after multiple attempts");
+                return;
+            }
+
+            // Scroll into view and ensure it's clickable
+            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", targetButton);
+            await Task.Delay(100); // Small delay for smooth scroll
+
+            // Use JavaScript click for more reliability
+            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", targetButton);
+
+            // Update state
+            _isPaused = shouldPause;
+            
+            // Update UI
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (sender is Button btn)
+                {
+                    var pauseIcon = btn.FindName("PauseIcon") as System.Windows.Shapes.Path;
+                    var playIcon = btn.FindName("PlayIcon") as System.Windows.Shapes.Path;
                     if (pauseIcon != null && playIcon != null)
                     {
-                        pauseIcon.Visibility = Visibility.Collapsed;
-                        playIcon.Visibility = Visibility.Visible;
-                        playIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA")); // TextSecondary color
-                    }
-                }
-            }
-            else
-            {
-                // Find and click play button
-                var playButton = wait.Until(d => d.FindElement(By.CssSelector("button[aria-label='Play']")));
-                playButton.Click();
-                StatusText.Text = "Playback resumed";
-                
-                // Update button to show pause icon
-                if (sender is Button button)
-                {
-                    var pauseIcon = button.FindName("PauseIcon") as System.Windows.Shapes.Path;
-                    var playIcon = button.FindName("PlayIcon") as System.Windows.Shapes.Path;
-                    if (pauseIcon != null && playIcon != null)
+                        if (shouldPause)
+                        {
+                            pauseIcon.Visibility = Visibility.Collapsed;
+                            playIcon.Visibility = Visibility.Visible;
+                            playIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA"));
+                        }
+                        else
                     {
                         pauseIcon.Visibility = Visibility.Visible;
                         playIcon.Visibility = Visibility.Collapsed;
-                        pauseIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA")); // TextSecondary color
+                            pauseIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA"));
                     }
                 }
             }
+                StatusText.Text = shouldPause ? "Playback paused" : "Playback resumed";
+            });
             
-            _isPaused = !_isPaused;
+            Log.Information("Successfully toggled playback: {State}", shouldPause ? "Paused" : "Resumed");
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error toggling playback state");
+            await Dispatcher.InvokeAsync(() =>
+            {
             StatusText.Text = "Error toggling playback";
+            });
+        }
+        finally
+        {
+            // Re-enable button after a short delay
+            if (sender is Button btn)
+            {
+                await Task.Delay(300);
+                await Dispatcher.InvokeAsync(() => btn.IsEnabled = true);
+            }
         }
     }
 
     private async void ForwardButton_Click(object sender, RoutedEventArgs e)
     {
+        // Debounce rapid clicks
+        if ((DateTime.Now - _lastControlClick).TotalMilliseconds < CONTROL_CLICK_DEBOUNCE_MS)
+            return;
+        _lastControlClick = DateTime.Now;
+
         if (driver == null || !IsMonitoring) return;
+
+        // Disable button temporarily
+        if (sender is Button button)
+        {
+            button.IsEnabled = false;
+        }
 
         try
         {
-            var wait = new OpenQA.Selenium.Support.UI.WebDriverWait(driver, TimeSpan.FromSeconds(5));
-            
-            // Try to find the forward button using the SVG path
-            try
+            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+            IWebElement? targetButton = null;
+
+            // Multiple strategies to find forward button
+            var strategies = new List<Func<IWebDriver, IWebElement?>>
             {
-                var forwardButton = wait.Until(d => d.FindElement(By.CssSelector("svg[viewBox='0 0 24 24'] path[d*='M16.757 4.626']")));
-                // Find the parent button element
-                var buttonElement = forwardButton.FindElement(By.XPath("./ancestor::button"));
-                ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView(true);", buttonElement);
-                buttonElement.Click();
+                // Strategy 1: aria-label
+                d => {
+                    try
+                    {
+                        return d.FindElement(By.CssSelector("button[aria-label*='next' i], button[aria-label*='forward' i], button[aria-label*='skip' i]"));
+                    }
+                    catch { return null; }
+                },
+                // Strategy 2: SVG path matching
+                d => {
+                    try
+                    {
+                        var path = d.FindElement(By.CssSelector("svg[viewBox='0 0 24 24'] path[d*='M16.757 4.626'], svg path[d*='M16.757']"));
+                        return path.FindElement(By.XPath("./ancestor::button"));
+                    }
+                    catch { return null; }
+                },
+                // Strategy 3: Find by data attributes or classes
+                d => {
+                    try
+                    {
+                        var buttons = d.FindElements(By.CssSelector("button[class*='forward'], button[class*='next'], button[class*='skip']"));
+                        return buttons.FirstOrDefault(b => b.Displayed && b.Enabled);
+                    }
+                    catch { return null; }
+                }
+            };
+
+            // Try each strategy with retries
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                foreach (var strategy in strategies)
+                {
+                    try
+                    {
+                        targetButton = wait.Until(d =>
+                        {
+                            var element = strategy(d);
+                            if (element != null && element.Displayed && element.Enabled)
+                            {
+                                return element;
+                            }
+                            return null;
+                        });
+
+                        if (targetButton != null) break;
+                    }
+                    catch { }
+                }
+
+                if (targetButton != null) break;
+                await Task.Delay(300 * (attempt + 1));
+            }
+
+            if (targetButton == null)
+            {
+                await Dispatcher.InvokeAsync(() => StatusText.Text = "Could not find forward button");
+                Log.Warning("Could not find forward button after multiple attempts");
+                return;
+            }
+
+            // Scroll into view smoothly
+            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", targetButton);
+            await Task.Delay(100);
+
+            // Use JavaScript click for reliability
+            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", targetButton);
+
+            await Dispatcher.InvokeAsync(() =>
+            {
                 StatusText.Text = "Skipped to next track";
-                Log.Information("Clicked forward button");
-            }
-            catch (OpenQA.Selenium.WebDriverTimeoutException)
-            {
-                Log.Warning("Could not find forward button");
-                StatusText.Text = "Could not find forward button";
-            }
+            });
+
+            Log.Information("Successfully clicked forward button");
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error clicking forward button");
+            await Dispatcher.InvokeAsync(() =>
+            {
             StatusText.Text = "Error skipping track";
+            });
+        }
+        finally
+        {
+            // Re-enable button
+            if (sender is Button btn)
+            {
+                await Task.Delay(300);
+                await Dispatcher.InvokeAsync(() => btn.IsEnabled = true);
+            }
         }
     }
 
@@ -2185,33 +2397,118 @@ public partial class MainWindow : Window
 
     private async void SkipBackButton_Click(object sender, RoutedEventArgs e)
     {
+        // Debounce rapid clicks
+        if ((DateTime.Now - _lastControlClick).TotalMilliseconds < CONTROL_CLICK_DEBOUNCE_MS)
+            return;
+        _lastControlClick = DateTime.Now;
+
         if (driver == null || !IsMonitoring) return;
+
+        // Disable button temporarily
+        if (sender is Button button)
+        {
+            button.IsEnabled = false;
+        }
 
         try
         {
-            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
-            
-            // Try to find the skip back button using the SVG path
-            try
+            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+            IWebElement? targetButton = null;
+
+            // Multiple strategies to find skip back button
+            var strategies = new List<Func<IWebDriver, IWebElement?>>
             {
-                var skipBackButton = wait.Until(d => d.FindElement(By.CssSelector("svg[viewBox='0 0 24 24'] path[d*='M7.764 4.554']")));
-                // Find the parent button element
-                var buttonElement = skipBackButton.FindElement(By.XPath("./ancestor::button"));
-                ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView(true);", buttonElement);
-                buttonElement.Click();
+                // Strategy 1: aria-label
+                d => {
+                    try
+                    {
+                        return d.FindElement(By.CssSelector("button[aria-label*='previous' i], button[aria-label*='back' i], button[aria-label*='rewind' i]"));
+                    }
+                    catch { return null; }
+                },
+                // Strategy 2: SVG path matching
+                d => {
+                    try
+                    {
+                        var path = d.FindElement(By.CssSelector("svg[viewBox='0 0 24 24'] path[d*='M7.764 4.554'], svg path[d*='M7.764']"));
+                        return path.FindElement(By.XPath("./ancestor::button"));
+                    }
+                    catch { return null; }
+                },
+                // Strategy 3: Find by data attributes or classes
+                d => {
+                    try
+                    {
+                        var buttons = d.FindElements(By.CssSelector("button[class*='back'], button[class*='previous'], button[class*='rewind']"));
+                        return buttons.FirstOrDefault(b => b.Displayed && b.Enabled);
+                    }
+                    catch { return null; }
+                }
+            };
+
+            // Try each strategy with retries
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                foreach (var strategy in strategies)
+                {
+                    try
+                    {
+                        targetButton = wait.Until(d =>
+                        {
+                            var element = strategy(d);
+                            if (element != null && element.Displayed && element.Enabled)
+                            {
+                                return element;
+                            }
+                            return null;
+                        });
+
+                        if (targetButton != null) break;
+                    }
+                    catch { }
+                }
+
+                if (targetButton != null) break;
+                await Task.Delay(300 * (attempt + 1));
+            }
+
+            if (targetButton == null)
+            {
+                await Dispatcher.InvokeAsync(() => StatusText.Text = "Could not find skip back button");
+                Log.Warning("Could not find skip back button after multiple attempts");
+                return;
+            }
+
+            // Scroll into view smoothly
+            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", targetButton);
+            await Task.Delay(100);
+
+            // Use JavaScript click for reliability
+            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", targetButton);
+
+            await Dispatcher.InvokeAsync(() =>
+            {
                 StatusText.Text = "Skipped to previous track";
-                Log.Information("Clicked skip back button");
-            }
-            catch (OpenQA.Selenium.WebDriverTimeoutException)
-            {
-                Log.Warning("Could not find skip back button");
-                StatusText.Text = "Could not find skip back button";
-            }
+            });
+
+            Log.Information("Successfully clicked skip back button");
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error clicking skip back button");
+            await Dispatcher.InvokeAsync(() =>
+            {
             StatusText.Text = "Error skipping track";
+            });
+        }
+        finally
+        {
+            // Re-enable button
+            if (sender is Button btn)
+            {
+                await Task.Delay(300);
+                await Dispatcher.InvokeAsync(() => btn.IsEnabled = true);
+            }
         }
     }
 
