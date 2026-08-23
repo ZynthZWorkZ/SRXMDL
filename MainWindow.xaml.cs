@@ -1,201 +1,150 @@
-using OpenQA.Selenium;
-using OpenQA.Selenium.Chrome;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using Serilog;
-using Serilog.Events;
-using System.Windows;
-using System.Windows.Threading;
-using System.IO;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.IO;
+using System.Net.Http;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
-using System.Linq;
 using System.Windows.Media.Imaging;
-using System.Threading;
-using System.Threading.Tasks;
-using OpenQA.Selenium.Support.UI;
-using System.Net.Http;
 using System.Windows.Shapes;
-using SRXMDL.Login;
-using System.Windows.Input;
+using System.Windows.Threading;
+using Microsoft.Web.WebView2.Core;
+using Serilog;
 using SRXMDL.Artist;
 using SRXMDL.Download;
+using SRXMDL.Login;
 using SRXMDL.Lyrics;
+using SRXMDL.Models;
+using SRXMDL.Services;
 using IOPath = System.IO.Path;
 
 namespace SRXMDL;
 
-/// <summary>
-/// Interaction logic for MainWindow.xaml
-/// </summary>
-public partial class MainWindow : Window
+public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyChanged
 {
-    private ChromeDriver? driver;
-    private CancellationTokenSource? cancellationTokenSource;
-    private bool _isMonitoring = false;
-    private bool _isPaused = false;
-    private NowPlaying currentTrack;
-    private DateTime _lastControlClick = DateTime.MinValue;
-    private const int CONTROL_CLICK_DEBOUNCE_MS = 500; // Prevent rapid clicks
-    private DispatcherTimer nowPlayingTimer;
-    private FileSystemWatcher? stationFeedbackWatcher;
-    private string? lastTuneSourceUrl;
-    private string? lastTuneSourcePayload;
-    private string? lastTuneSourceAuthToken;
-    private ArtistStations? artistStations;
-    private const double BaseWidth = 1250;
-    private const double BaseHeight = 800;
-    private const double MinScale = 0.7;
+    private const double BaseWidth = 1600;
+    private const double BaseHeight = 920;
+    private const double MinScale = 0.75;
     private const double MaxScale = 1.0;
-    private bool _captureBearer = false;
-    private bool _autoLoginStarted = false;
+    private const int ControlClickDebounceMs = 500;
+
+    private readonly ObservableCollection<StreamEntry> _streamEntries;
+    private readonly ObservableCollection<ArtistEntry> _artistEntries;
+    private readonly StreamNetworkProcessor _streamProcessor = new();
+    private readonly WebViewPlaybackService _playbackService = new();
+    private readonly DispatcherTimer _nowPlayingTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+
+    private WebViewSessionService? _sessionService;
+    private WebViewNetworkMonitor? _networkMonitor;
+    private ArtistStations? _artistStations;
+    private FileSystemWatcher? _stationFeedbackWatcher;
+
+    private NowPlaying _currentTrack = new();
+    private bool _isMonitoring;
+    private bool _isPaused;
+    private bool _captureBearer;
+    private bool _autoLoginStarted;
+    private bool _showingArtists;
+    private bool _webExpanded;
+    private GridLength _savedPlayerColumnWidth = new(1, GridUnitType.Star);
+    private GridLength _savedFeatureColumnWidth = new(1, GridUnitType.Star);
+    private DateTime _lastControlClick = DateTime.MinValue;
+
+    public MainWindow()
+    {
+        InitializeComponent();
+        DataContext = this;
+
+        _streamEntries = new ObservableCollection<StreamEntry>();
+        _artistEntries = new ObservableCollection<ArtistEntry>();
+        StreamListView.ItemsSource = _streamEntries;
+        ArtistListView.ItemsSource = _artistEntries;
+
+        AttemptAutoLoginWithCredsAsync = HandleAutoLoginAsync;
+
+        SetupLogging();
+        _nowPlayingTimer.Tick += async (_, _) => await UpdateNowPlayingAsync();
+        SetupStationFeedbackWatcher();
+        UpdateResponsiveLayout();
+        SetTabState();
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public Dispatcher UiDispatcher => Dispatcher;
+
+    public ObservableCollection<StreamEntry> StreamEntries => _streamEntries;
+
+    public string? LastTuneSourceUrl { get; set; }
+    public string? LastTuneSourcePayload { get; set; }
+    public string? LastTuneSourceAuthToken { get; set; }
+
+    public bool CaptureBearer
+    {
+        get => _captureBearer;
+        set => _captureBearer = value;
+    }
+
+    public Func<string, Task>? AttemptAutoLoginWithCredsAsync { get; set; }
+
     public bool IsMonitoring
     {
         get => _isMonitoring;
         private set
         {
-            _isMonitoring = value;
-            artistStations?.SetMonitoringStatus(value);
-        }
-    }
-
-    private bool TryImportCookies(ChromeDriver chromeDriver, string cookieFile)
-    {
-        if (chromeDriver == null) return false;
-        if (!File.Exists(cookieFile)) return false;
-
-        var lines = File.ReadAllLines(cookieFile)
-                        .Where(l => !string.IsNullOrWhiteSpace(l) && !l.TrimStart().StartsWith("#"))
-                        .ToList();
-
-        if (!lines.Any()) return false;
-
-        var epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var cookiesByDomain = new Dictionary<string, List<Cookie>>();
-
-        foreach (var line in lines)
-        {
-            var parts = line.Split('\t');
-            if (parts.Length != 7) continue;
-
-            var domain = parts[0];
-            var path = parts[2];
-            var secureFlag = parts[3];
-            var expiresStr = parts[4];
-            var name = parts[5];
-            var value = parts[6];
-
-            DateTime? expires = null;
-            if (long.TryParse(expiresStr, out var expSeconds) && expSeconds > 0)
-            {
-                expires = epoch.AddSeconds(expSeconds);
-                if (expires <= DateTime.UtcNow)
-                {
-                    continue; // expired
-                }
-            }
-
-            var isSecure = secureFlag.Equals("TRUE", StringComparison.OrdinalIgnoreCase);
-            var cookie = new Cookie(name, value, domain, path, expires);
-            if (!cookiesByDomain.ContainsKey(domain))
-            {
-                cookiesByDomain[domain] = new List<Cookie>();
-            }
-            cookiesByDomain[domain].Add(cookie);
-        }
-
-        if (!cookiesByDomain.Any()) return false;
-
-        foreach (var kvp in cookiesByDomain)
-        {
-            var domain = kvp.Key.TrimStart('.');
-            var targetUrl = $"https://{domain}";
-            try
-            {
-                chromeDriver.Navigate().GoToUrl(targetUrl);
-                foreach (var c in kvp.Value)
-                {
-                    try { chromeDriver.Manage().Cookies.AddCookie(c); }
-                    catch (Exception ex) { Log.Debug(ex, "Skipping cookie {CookieName}", c.Name); }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Debug(ex, "Skipping domain while importing cookies: {Domain}", domain);
-            }
-        }
-
-        return true;
-    }
-
-    private async Task AttemptAutoLoginWithCreds(string bearerToken)
-    {
-        if (_autoLoginStarted) return;
-        _autoLoginStarted = true;
-        try
-        {
-            var cred = CredentialStore.Load();
-            if (cred == null)
-            {
-                Log.Information("Login cred.json not found or invalid; skipping auto login.");
+            if (_isMonitoring == value)
                 return;
-            }
 
-            using var svc = new SiriusXmLoginService();
-            var session = await svc.LoginAsync(cred.Value.Email, cred.Value.Password, bearerToken.Replace("Bearer ", "", StringComparison.OrdinalIgnoreCase));
-            if (session != null)
-            {
-                var cookies = svc.ExportCookiesNetscapeFormat();
-                await File.WriteAllTextAsync("cookies-siriusxm-com.txt", cookies);
-                Log.Information("Auto login succeeded and cookies saved to cookies-siriusxm-com.txt");
-                if (driver != null)
-                {
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        try
-                        {
-                            if (TryImportCookies(driver, "cookies-siriusxm-com.txt"))
-                            {
-                                driver.Navigate().GoToUrl("https://www.siriusxm.com/player/home");
-                                StatusText.Text = "Session restored from fresh cookies";
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Warning(ex, "Error importing fresh cookies into live driver");
-                        }
-                    });
-                }
-            }
-            else
-            {
-                Log.Warning("Auto login failed; session is null.");
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error during auto login with captured credentials");
+            _isMonitoring = value;
+            _artistStations?.SetMonitoringStatus(value);
+            OnPropertyChanged();
         }
     }
-    private ObservableCollection<StreamEntry> streamEntries;
-    private ObservableCollection<Artist.ArtistEntry> artistEntries;
-    private const string FAVORITES_FILE = "favorites.json";
 
-    public MainWindow()
+    public void UpdateTotalCapturedCount()
     {
-        InitializeComponent();
-        streamEntries = new ObservableCollection<StreamEntry>();
-        artistEntries = new ObservableCollection<Artist.ArtistEntry>();
-        StreamListView.ItemsSource = streamEntries;
-        ((ListView)FindName("ArtistListView")).ItemsSource = artistEntries;
-        currentTrack = new NowPlaying();
-        SetupLogging();
-        SetupNowPlayingTimer();
-        SetupStationFeedbackWatcher();
-        UpdateResponsiveLayout();
+        Dispatcher.Invoke(() => TotalCapturedCount.Text = _streamEntries.Count.ToString());
+    }
+
+    public void RefreshStreamList()
+    {
+        Dispatcher.Invoke(() => StreamListView.Items.Refresh());
+    }
+
+    public void SetStatus(string message)
+    {
+        Dispatcher.Invoke(() => StatusText.Text = message);
+    }
+
+    public bool IsDuplicateStream(string url, out StreamEntry? existingEntry)
+    {
+        var fileName = ExtractFileNameFromUrl(url);
+        existingEntry = _streamEntries.FirstOrDefault(entry => ExtractFileNameFromUrl(entry.Url) == fileName);
+        return existingEntry != null;
+    }
+
+    public Task ProcessArtistStationUrlAsync(string url)
+    {
+        if (_artistStations == null)
+            return Task.CompletedTask;
+
+        return _artistStations.ProcessArtistStationUrl(url);
+    }
+
+    public Task RunOnUiAsync(Action action)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            action();
+            return Task.CompletedTask;
+        }
+
+        return Dispatcher.InvokeAsync(action).Task;
     }
 
     private void SetupLogging()
@@ -205,6 +154,435 @@ public partial class MainWindow : Window
             .WriteTo.Console()
             .WriteTo.File("mp4_requests.log", rollingInterval: RollingInterval.Day)
             .CreateLogger();
+    }
+
+    private void SetupStationFeedbackWatcher()
+    {
+        try
+        {
+            Directory.CreateDirectory("Stations");
+            _stationFeedbackWatcher = new FileSystemWatcher("Stations")
+            {
+                Filter = "station_feedback.json",
+                NotifyFilter = NotifyFilters.LastWrite,
+                EnableRaisingEvents = true
+            };
+            _stationFeedbackWatcher.Changed += OnStationFeedbackChanged;
+            Log.Information("Station feedback file watcher initialized");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error setting up station feedback watcher");
+        }
+    }
+
+    private async void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        UpdateResponsiveLayout();
+
+        try
+        {
+            _sessionService = new WebViewSessionService();
+            _sessionService.StatusChanged += message => Dispatcher.Invoke(() =>
+            {
+                StatusText.Text = message;
+            });
+            _sessionService.LoginStateChanged += signedIn => Dispatcher.Invoke(() =>
+            {
+                PlayerStatusIndicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString(
+                    signedIn ? "#30D158" : "#FF453A")!);
+                PlayerStatusText.Text = signedIn ? "Signed in" : "Not signed in";
+            });
+            _sessionService.SourceChanged += async url =>
+            {
+                if (string.IsNullOrWhiteSpace(url))
+                    return;
+
+                if (url.StartsWith("https://www.siriusxm.com/player/artist-station", StringComparison.OrdinalIgnoreCase))
+                    await ProcessArtistStationUrlAsync(url);
+            };
+
+            await _sessionService.InitializeAsync(SxmWebView);
+
+            var core = _sessionService.CoreWebView2;
+            if (core != null)
+            {
+                _networkMonitor = new WebViewNetworkMonitor(this, _streamProcessor);
+                await _networkMonitor.StartAsync(core);
+                Log.Information("WebView2 CDP network monitoring attached at startup");
+            }
+
+            _artistStations = new ArtistStations(
+                () => _sessionService.CoreWebView2,
+                Dispatcher,
+                _artistEntries)
+            {
+                ArtistListView = ArtistListView
+            };
+
+            StatusText.Text = "Player ready — sign in on the left to begin";
+            Log.Information("WebView2 session initialized");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to initialize WebView2 session");
+            StatusText.Text = "Failed to initialize player";
+        }
+    }
+
+    private void ExpandWebButton_Click(object sender, RoutedEventArgs e)
+    {
+        _webExpanded = !_webExpanded;
+
+        if (_webExpanded)
+        {
+            _savedPlayerColumnWidth = PlayerColumn.Width;
+            _savedFeatureColumnWidth = FeatureColumn.Width;
+
+            FeatureColumn.MinWidth = 0;
+            FeatureColumn.Width = new GridLength(0);
+
+            ExpandWebButton.Content = "\uE73F";
+            ExpandWebButton.ToolTip = "Restore split view";
+        }
+        else
+        {
+            FeatureColumn.MinWidth = 280;
+            FeatureColumn.Width = _savedFeatureColumnWidth.Value > 0 ? _savedFeatureColumnWidth : new GridLength(1, GridUnitType.Star);
+            PlayerColumn.Width = _savedPlayerColumnWidth.Value > 0 ? _savedPlayerColumnWidth : new GridLength(1, GridUnitType.Star);
+
+            ExpandWebButton.Content = "\uE740";
+            ExpandWebButton.ToolTip = "Expand player";
+        }
+    }
+
+    private void StreamsTabButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_showingArtists)
+            return;
+
+        _showingArtists = false;
+        SetTabState();
+    }
+
+    private void ArtistsTabButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_showingArtists)
+            return;
+
+        _showingArtists = true;
+        SetTabState();
+    }
+
+    private void SetTabState()
+    {
+        StreamListView.Visibility = _showingArtists ? Visibility.Collapsed : Visibility.Visible;
+        ArtistsPanel.Visibility = _showingArtists ? Visibility.Visible : Visibility.Collapsed;
+        ClearStreamsButton.Visibility = _showingArtists ? Visibility.Collapsed : Visibility.Visible;
+
+        var accentBlue = (Brush)FindResource("AccentBlue");
+        var textSecondary = (Brush)FindResource("TextSecondary");
+
+        StreamsTabButton.Background = _showingArtists ? Brushes.Transparent : accentBlue;
+        StreamsTabButton.Foreground = _showingArtists ? textSecondary : Brushes.White;
+
+        ArtistsTabButton.Background = _showingArtists ? accentBlue : Brushes.Transparent;
+        ArtistsTabButton.Foreground = _showingArtists ? Brushes.White : textSecondary;
+    }
+
+    private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateResponsiveLayout();
+    }
+
+    private void UpdateResponsiveLayout()
+    {
+        try
+        {
+            var widthRatio = ActualWidth / BaseWidth;
+            var heightRatio = ActualHeight / BaseHeight;
+            var scale = Math.Min(MaxScale, Math.Max(MinScale, Math.Min(widthRatio, heightRatio)));
+
+            RootScale.ScaleX = scale;
+            RootScale.ScaleY = scale;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Error applying responsive layout");
+        }
+    }
+
+    private async void StartButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (IsMonitoring)
+            return;
+
+        if (_sessionService?.CoreWebView2 == null)
+        {
+            StatusText.Text = "Player is not ready yet";
+            return;
+        }
+
+        try
+        {
+            StartButton.IsEnabled = false;
+            StopButton.IsEnabled = true;
+            StatusText.Text = "Starting...";
+
+            _streamEntries.Clear();
+            UpdateTotalCapturedCount();
+
+            foreach (var entry in _artistEntries.Where(a => !a.IsFavorite).ToList())
+                _artistEntries.Remove(entry);
+
+            var cookiesImported = CookieFileHelper.Exists();
+            CaptureBearer = !cookiesImported;
+
+            // The CDP network monitor is attached once at startup (see Window_Loaded) so that it
+            // never misses traffic due to the async attach delay racing with playback that may
+            // already be in progress. Starting/stopping here only toggles whether captured
+            // traffic gets recorded to the visible list.
+            UpdateMonitoringStatus(true);
+
+            StatusText.Text = cookiesImported
+                ? "Monitoring active — using saved session"
+                : "Monitoring active — sign in in the player if needed";
+
+            Log.Information("Stream capture recording started");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "An error occurred while starting the monitor");
+            StatusText.Text = "Error occurred";
+            await StopMonitoringAsync();
+        }
+    }
+
+    private async void StopButton_Click(object sender, RoutedEventArgs e)
+    {
+        await StopMonitoringAsync();
+    }
+
+    private async Task StopMonitoringAsync()
+    {
+        if (!IsMonitoring)
+            return;
+
+        try
+        {
+            // Note: the CDP network monitor itself keeps running in the background (it is only
+            // torn down when the app closes) so that no traffic is missed between Stop/Start.
+
+            if (Directory.Exists("Stations"))
+            {
+                foreach (var file in Directory.GetFiles("Stations"))
+                {
+                    try
+                    {
+                        File.Delete(file);
+                        Log.Information("Deleted file: {File}", file);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "Error deleting file: {File}", file);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error while stopping monitoring");
+        }
+        finally
+        {
+            IsMonitoring = false;
+            StartButton.IsEnabled = true;
+            StopButton.IsEnabled = false;
+            StatusText.Text = "Ready";
+            UpdateMonitoringStatus(false);
+        }
+    }
+
+    private void UpdateMonitoringStatus(bool isActive)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            IsMonitoring = isActive;
+
+            if (isActive)
+            {
+                StatusIndicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#30D158")!);
+                StatusIndicator.Effect = new DropShadowEffect
+                {
+                    Color = (Color)ColorConverter.ConvertFromString("#30D158")!,
+                    Opacity = 0.7,
+                    BlurRadius = 8,
+                    ShadowDepth = 0
+                };
+                ConnectionStatus.Text = "ACTIVE";
+
+                if (FindResource("BlinkAnimation") is Storyboard blinkAnimation)
+                    blinkAnimation.Begin(StatusIndicator);
+
+                _nowPlayingTimer.Start();
+            }
+            else
+            {
+                StatusIndicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF453A")!);
+                StatusIndicator.Effect = new DropShadowEffect
+                {
+                    Color = (Color)ColorConverter.ConvertFromString("#FF453A")!,
+                    Opacity = 0.7,
+                    BlurRadius = 8,
+                    ShadowDepth = 0
+                };
+                ConnectionStatus.Text = "STANDBY";
+
+                StatusIndicator.BeginAnimation(UIElement.OpacityProperty, null);
+                StatusIndicator.Opacity = 1;
+
+                _nowPlayingTimer.Stop();
+                _isPaused = false;
+                ResetPauseButtonIcons();
+
+                NowPlayingTrack.Text = "No track playing";
+                NowPlayingStation.Text = "No station selected";
+                NowPlayingArt.Source = null;
+                _currentTrack = new NowPlaying();
+            }
+        });
+    }
+
+    private async Task UpdateNowPlayingAsync()
+    {
+        var core = _sessionService?.CoreWebView2;
+        if (core == null || !IsMonitoring)
+            return;
+
+        try
+        {
+            var playing = await _playbackService.GetNowPlayingAsync(core);
+
+            if (playing.TrackName == _currentTrack.TrackName &&
+                playing.StationName == _currentTrack.StationName &&
+                playing.AlbumArtUrl == _currentTrack.AlbumArtUrl)
+            {
+                return;
+            }
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (playing.TrackName != _currentTrack.TrackName)
+                {
+                    _currentTrack.TrackName = playing.TrackName;
+                    NowPlayingTrack.Text = playing.TrackName;
+                    Log.Debug("Updated track name to: {TrackName}", playing.TrackName);
+                }
+
+                if (playing.StationName != _currentTrack.StationName)
+                {
+                    _currentTrack.StationName = playing.StationName;
+                    NowPlayingStation.Text = playing.StationName;
+                    Log.Debug("Updated station name to: {StationName}", playing.StationName);
+                }
+
+                if (playing.AlbumArtUrl != _currentTrack.AlbumArtUrl)
+                {
+                    _currentTrack.AlbumArtUrl = playing.AlbumArtUrl;
+                    if (!string.IsNullOrEmpty(playing.AlbumArtUrl))
+                    {
+                        try
+                        {
+                            NowPlayingArt.Source = new BitmapImage(new Uri(playing.AlbumArtUrl));
+                            Log.Debug("Updated album art image");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error(ex, "Error loading album art image from URL: {Url}", playing.AlbumArtUrl);
+                        }
+                    }
+                    else
+                    {
+                        NowPlayingArt.Source = null;
+                    }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error updating now playing information");
+        }
+    }
+
+    private async Task HandleAutoLoginAsync(string bearerToken)
+    {
+        if (_autoLoginStarted || _sessionService == null)
+            return;
+
+        _autoLoginStarted = true;
+
+        try
+        {
+            var loginDir = IOPath.Combine(AppContext.BaseDirectory, "Login");
+            Directory.CreateDirectory(loginDir);
+            await File.WriteAllTextAsync(IOPath.Combine(loginDir, "authorization Bearer.txt"), bearerToken.Trim());
+
+            if (await _sessionService.TryAutoLoginWithSavedCredentialsAsync())
+            {
+                CaptureBearer = false;
+                SetStatus("Signed in with saved credentials");
+                Log.Information("Auto login succeeded via WebView2 session");
+            }
+            else
+            {
+                Log.Warning("Auto login with saved credentials failed");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error during auto login with captured credentials");
+        }
+    }
+
+    private async void OnStationFeedbackChanged(object sender, FileSystemEventArgs e)
+    {
+        try
+        {
+            await Task.Delay(100);
+
+            if (!string.IsNullOrEmpty(LastTuneSourceUrl) &&
+                !string.IsNullOrEmpty(LastTuneSourcePayload) &&
+                !string.IsNullOrEmpty(LastTuneSourceAuthToken))
+            {
+                Log.Information("Station feedback updated, sending tuneSource request");
+                await _streamProcessor.SendTuneSourceRequestAsync(
+                    LastTuneSourceUrl,
+                    LastTuneSourcePayload,
+                    LastTuneSourceAuthToken,
+                    this);
+            }
+            else
+            {
+                Log.Warning("Cannot send tuneSource request - missing previous request data");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error handling station feedback change");
+        }
+    }
+
+    private static string ExtractFileNameFromUrl(string url)
+    {
+        try
+        {
+            var fileName = url.Split('/').Last();
+            return fileName.Split('?')[0];
+        }
+        catch
+        {
+            return url;
+        }
     }
 
     private void CopyButton_Click(object sender, RoutedEventArgs e)
@@ -239,1173 +617,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ToggleFavorite_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button button && button.DataContext is Artist.ArtistEntry entry)
-        {
-            artistStations?.ToggleFavorite(button, entry);
-        }
-    }
-
-    private void SetupNowPlayingTimer()
-    {
-        nowPlayingTimer = new DispatcherTimer();
-        nowPlayingTimer.Interval = TimeSpan.FromSeconds(2);
-        nowPlayingTimer.Tick += async (s, e) => await UpdateNowPlaying();
-    }
-
-    private async Task UpdateNowPlaying()
-    {
-        if (driver == null || !IsMonitoring) return;
-
-        try
-        {
-            var wait = new OpenQA.Selenium.Support.UI.WebDriverWait(driver, TimeSpan.FromSeconds(5));
-            
-            // Get track name
-            string newTrackName = "No track playing";
-            try
-            {
-                var trackElement = wait.Until(d => d.FindElement(By.CssSelector("div.styles-module__title___D3wQt")));
-                newTrackName = trackElement.Text.Trim();
-                
-                // Skip if the new track name is exactly the same as the current one
-                if (newTrackName == currentTrack.TrackName)
-                {
-                    return;
-                }
-            }
-            catch
-            {
-                // Keep existing track name if we can't get a new one
-                newTrackName = currentTrack.TrackName ?? "No track playing";
-            }
-
-            // Get station name
-            string newStationName = "No station selected";
-            try
-            {
-                var stationElement = wait.Until(d => d.FindElement(By.CssSelector("div.styles-module__text___xT9yv span")));
-                newStationName = stationElement.Text.Trim();
-            }
-            catch
-            {
-                // Keep existing station name if we can't get a new one
-                newStationName = currentTrack.StationName ?? "No station selected";
-            }
-
-            // Get album art
-            string newAlbumArtUrl = "";
-            try
-            {
-                var albumArtElement = wait.Until(d => d.FindElement(By.CssSelector("div.styles-module__imageContainer___b-ipU img")));
-                newAlbumArtUrl = albumArtElement.GetAttribute("src");
-                Log.Debug("Found album art URL: {Url}", newAlbumArtUrl);
-            }
-            catch (Exception ex)
-            {
-                // Keep existing album art URL if we can't get a new one
-                newAlbumArtUrl = currentTrack.AlbumArtUrl ?? "";
-                Log.Debug(ex, "Could not find album art element");
-            }
-
-            // Only update UI if values have changed
-            await Dispatcher.InvokeAsync(() =>
-            {
-                if (newTrackName != currentTrack.TrackName)
-                {
-                    currentTrack.TrackName = newTrackName;
-                    NowPlayingTrack.Text = newTrackName;
-                    Log.Debug("Updated track name to: {TrackName}", newTrackName);
-                }
-
-                if (newStationName != currentTrack.StationName)
-                {
-                    currentTrack.StationName = newStationName;
-                    NowPlayingStation.Text = newStationName;
-                    Log.Debug("Updated station name to: {StationName}", newStationName);
-                }
-
-                if (newAlbumArtUrl != currentTrack.AlbumArtUrl)
-                {
-                    currentTrack.AlbumArtUrl = newAlbumArtUrl;
-                    if (!string.IsNullOrEmpty(newAlbumArtUrl))
-                    {
-                        try
-                        {
-                            NowPlayingArt.Source = new BitmapImage(new Uri(newAlbumArtUrl));
-                            Log.Debug("Updated album art image");
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error(ex, "Error loading album art image from URL: {Url}", newAlbumArtUrl);
-                        }
-                    }
-                }
-            });
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error updating now playing information");
-        }
-    }
-
-    private void UpdateMonitoringStatus(bool isActive)
-    {
-        Dispatcher.Invoke(() =>
-        {
-            IsMonitoring = isActive;
-            if (isActive)
-            {
-                StatusIndicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981")); // AccentGreen
-                StatusIndicator.Effect = new DropShadowEffect
-                {
-                    Color = (Color)ColorConverter.ConvertFromString("#10B981"),
-                    Opacity = 0.6,
-                    BlurRadius = 4,
-                    ShadowDepth = 0
-                };
-                ConnectionStatus.Text = "Active";
-                
-                // Start blinking animation
-                var blinkAnimation = (Storyboard)FindResource("BlinkAnimation");
-                blinkAnimation.Begin(StatusIndicator);
-
-                // Start now playing updates
-                nowPlayingTimer.Start();
-            }
-            else
-            {
-                StatusIndicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EF4444")); // AccentRed
-                StatusIndicator.Effect = new DropShadowEffect
-                {
-                    Color = (Color)ColorConverter.ConvertFromString("#EF4444"),
-                    Opacity = 0.6,
-                    BlurRadius = 4,
-                    ShadowDepth = 0
-                };
-                ConnectionStatus.Text = "Not Active";
-                
-                // Stop any running animation
-                StatusIndicator.BeginAnimation(UIElement.OpacityProperty, null);
-                StatusIndicator.Opacity = 1;
-
-                // Stop now playing updates
-                nowPlayingTimer.Stop();
-                
-                // Clear now playing information
-                NowPlayingTrack.Text = "No track playing";
-                NowPlayingStation.Text = "No station selected";
-                NowPlayingArt.Source = null;
-            }
-        });
-    }
-
-    private async void StartButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (IsMonitoring) return;
-
-        try
-        {
-            StartButton.IsEnabled = false;
-            StopButton.IsEnabled = true;
-            StatusText.Text = "Starting...";
-            IsMonitoring = true;
-            streamEntries.Clear();
-            bool cookiesImported = false;
-            if (File.Exists("cookies-siriusxm-com.txt"))
-            {
-                try
-                {
-                    cookiesImported = TryImportCookies(driver, "cookies-siriusxm-com.txt");
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning(ex, "Error importing cookies; will capture bearer");
-                }
-            }
-            _captureBearer = !cookiesImported;
-            
-            // Instead of clearing all entries, only clear non-favorites
-            var nonFavorites = artistEntries.Where(a => !a.IsFavorite).ToList();
-            foreach (var entry in nonFavorites)
-            {
-                artistEntries.Remove(entry);
-            }
-            
-            UpdateMonitoringStatus(true);
-
-            cancellationTokenSource = new CancellationTokenSource();
-
-            // Skip cookie management - user will login manually
-
-            // Initialize Chrome options
-            var options = new ChromeOptions();
-            options.AddArgument("--start-maximized");
-            
-            // Suppress GCM registration errors and background networking
-            options.AddArgument("--disable-background-networking");
-            options.AddArgument("--disable-background-timer-throttling");
-            options.AddArgument("--disable-backgrounding-occluded-windows");
-            options.AddArgument("--disable-breakpad");
-            options.AddArgument("--disable-client-side-phishing-detection");
-            options.AddArgument("--disable-component-extensions-with-background-pages");
-            options.AddArgument("--disable-default-apps");
-            options.AddArgument("--disable-dev-shm-usage");
-            options.AddArgument("--disable-extensions");
-            options.AddArgument("--disable-features=TranslateUI");
-            options.AddArgument("--disable-hang-monitor");
-            options.AddArgument("--disable-ipc-flooding-protection");
-            options.AddArgument("--disable-popup-blocking");
-            options.AddArgument("--disable-prompt-on-repost");
-            options.AddArgument("--disable-renderer-backgrounding");
-            options.AddArgument("--disable-sync");
-            options.AddArgument("--disable-translate");
-            options.AddArgument("--disable-web-resources");
-            options.AddArgument("--metrics-recording-only");
-            options.AddArgument("--no-first-run");
-            options.AddArgument("--safebrowsing-disable-auto-update");
-            options.AddArgument("--enable-automation");
-            options.AddArgument("--password-store=basic");
-            options.AddArgument("--use-mock-keychain");
-            // Note: --mute-audio removed - we need audio for SiriusXM playback!
-            
-            // Suppress error logging for GCM/deprecated endpoints
-            options.AddExcludedArgument("enable-logging");
-            options.AddArgument("--log-level=3"); // Only show fatal errors
-            
-            options.SetLoggingPreference(LogType.Performance, LogLevel.All);
-
-            // Initialize Chrome driver
-            driver = new ChromeDriver(options);
-            
-            // Initialize ArtistStations
-            artistStations = new ArtistStations(driver, Dispatcher, artistEntries);
-            artistStations.ArtistListView = ArtistListView;
-
-            if (cookiesImported)
-            {
-                await NavigateWithRetry(driver, "https://www.siriusxm.com/player/home");
-                StatusText.Text = "Browser opened with cookies - verifying session";
-            }
-            else
-            {
-                await NavigateWithRetry(driver, "https://www.siriusxm.com/player/login");
-                StatusText.Text = "Browser opened - please login manually";
-            }
-
-            Log.Information("Browser is now open. User can login manually and monitoring will begin automatically.");
-
-            // Start monitoring in background
-            _ = Task.Run(() => MonitorNetworkTraffic(cancellationTokenSource.Token));
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "An error occurred while starting the monitor");
-            StatusText.Text = "Error occurred";
-            await StopMonitoring();
-        }
-    }
-
-    private async void StopButton_Click(object sender, RoutedEventArgs e)
-    {
-        await StopMonitoring();
-    }
-
-    private async Task StopMonitoring()
-    {
-        if (!IsMonitoring) return;
-
-        try
-        {
-            cancellationTokenSource?.Cancel();
-            driver?.Quit();
-            driver?.Dispose();
-            driver = null;
-
-            // Clear all files in the Stations directory
-            if (Directory.Exists("Stations"))
-            {
-                foreach (var file in Directory.GetFiles("Stations"))
-                {
-                    try
-                    {
-                        File.Delete(file);
-                        Log.Information("Deleted file: {File}", file);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error(ex, "Error deleting file: {File}", file);
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error while stopping monitoring");
-        }
-        finally
-        {
-            IsMonitoring = false;
-            StartButton.IsEnabled = true;
-            StopButton.IsEnabled = false;
-            StatusText.Text = "Ready";
-            UpdateMonitoringStatus(false);
-        }
-    }
-
-    private string ExtractFileNameFromUrl(string url)
-    {
-        try
-        {
-            // Extract the last part of the URL after the last '/'
-            var fileName = url.Split('/').Last();
-            // Remove any query parameters if present
-            fileName = fileName.Split('?')[0];
-            return fileName;
-        }
-        catch
-        {
-            return url; // Return original URL if parsing fails
-        }
-    }
-
-    private bool IsDuplicateStream(string url, out StreamEntry existingEntry)
-    {
-        var fileName = ExtractFileNameFromUrl(url);
-        existingEntry = streamEntries.FirstOrDefault(entry => ExtractFileNameFromUrl(entry.Url) == fileName);
-        return existingEntry != null;
-    }
-
-    private async Task MonitorNetworkTraffic(CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
-                // Check if we're on the welcome page (user needs to login)
-                if (driver?.Url != null && driver.Url.Contains("siriusxm.com/player/welcome"))
-                {
-                    Log.Information("User is on welcome page - waiting for manual login");
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        StatusText.Text = "Please login in the browser window";
-                    });
-                }
-
-                // Check if user has successfully logged in (not on welcome page)
-                if (driver?.Url != null && !driver.Url.Contains("siriusxm.com/player/welcome") && driver.Url.Contains("siriusxm.com"))
-                {
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        StatusText.Text = "Monitoring active - login successful";
-                    });
-                }
-
-                // Check current URL for artist station
-                if (driver?.Url != null && driver.Url.StartsWith("https://www.siriusxm.com/player/artist-station"))
-                {
-                    await ProcessArtistStationUrl(driver.Url);
-                }
-
-                var logs = driver?.Manage().Logs.GetLog(LogType.Performance);
-                if (logs != null)
-                {
-                    foreach (var log in logs)
-                    {
-                        try
-                        {
-                            var logEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(log.Message);
-                            if (logEntry?.Message?.Method == "Network.responseReceived")
-                            {
-                                var url = logEntry.Message.Params?.Response?.Url;
-                                if (url != null)
-                                {
-                                    // Check for artist station URLs
-                                    if (url.StartsWith("https://www.siriusxm.com/player/artist-station"))
-                                    {
-                                        await ProcessArtistStationUrl(url);
-                                    }
-
-                                    // Skip image traffic and imgsrv-sxm domain
-                                    if (url.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
-                                        url.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
-                                        url.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
-                                        url.EndsWith(".gif", StringComparison.OrdinalIgnoreCase) ||
-                                        url.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ||
-                                        url.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) ||
-                                        url.Contains("imgsrv-sxm") ||
-                                        url.Contains("lookaround-cache-prod.streaming.siriusxm.com"))
-                                    {
-                                        continue;
-                                    }
-
-                                    // Check for MP3 traffic
-                                    if (url.Contains(".mp3", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        StreamEntry existingEntry;
-                                        // Check if this is a duplicate file
-                                        if (IsDuplicateStream(url, out existingEntry))
-                                        {
-                                            Log.Debug("Skipping duplicate MP3 file: {Url}", url);
-                                            continue;
-                                        }
-
-                                        Log.Information("MP3 traffic detected: {Url}", url);
-                                        await Dispatcher.InvokeAsync(() =>
-                                        {
-                                            streamEntries.Add(new StreamEntry
-                                            {
-                                                Timestamp = DateTime.Now.ToString("HH:mm:ss"),
-                                                StreamType = "mp3",
-                                                Url = url,
-                                                TrackName = "Unnamed MP3",
-                                                ArtistName = "Unknown",
-                                                PreferredImageUrl = null
-                                            });
-                                            UpdateTotalCapturedCount();
-                                        });
-                                        continue;
-                                    }
-
-                                    // Check for unnamed MP4 traffic
-                                    if (url.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) && !url.Contains("named"))
-                                    {
-                                        StreamEntry existingEntry;
-                                        // Check if this is a duplicate file
-                                        if (IsDuplicateStream(url, out existingEntry))
-                                        {
-                                            Log.Debug("Skipping duplicate MP4 file: {Url}", url);
-                                            continue;
-                                        }
-
-                                        Log.Information("Unnamed MP4 traffic detected: {Url}", url);
-                                        await Dispatcher.InvokeAsync(() =>
-                                        {
-                                            streamEntries.Add(new StreamEntry
-                                            {
-                                                Timestamp = DateTime.Now.ToString("HH:mm:ss"),
-                                                StreamType = "mp4",
-                                                Url = url,
-                                                TrackName = "Unnamed MP4",
-                                                ArtistName = "Unknown",
-                                                PreferredImageUrl = null
-                                            });
-                                            UpdateTotalCapturedCount();
-                                        });
-                                        continue;
-                                    }
-
-                                    // Check for M3U8 traffic
-                                    if (url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        StreamEntry existingEntry;
-                                        // Check if this is a duplicate file
-                                        if (IsDuplicateStream(url, out existingEntry))
-                                        {
-                                            Log.Debug("Skipping duplicate M3U8 file: {Url}", url);
-                                            continue;
-                                        }
-
-                                        Log.Information("M3U8 traffic detected: {Url}", url);
-                                        await Dispatcher.InvokeAsync(() =>
-                                        {
-                                            streamEntries.Add(new StreamEntry
-                                            {
-                                                Timestamp = DateTime.Now.ToString("HH:mm:ss"),
-                                                StreamType = "m3u8",
-                                                Url = url,
-                                                TrackName = "Unnamed M3U8",
-                                                ArtistName = "Unknown",
-                                                PreferredImageUrl = null
-                                            });
-                                            UpdateTotalCapturedCount();
-                                        });
-                                        continue;
-                                    }
-
-                                    // Monitor station feedback endpoint
-                                    if (url.Contains("api.edge-gateway.siriusxm.com/stations/v1/station-feedback/station/type/artist-station/id"))
-                                    {
-                                        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                                        Log.Information("Station feedback request detected: {Url}", url);
-
-                                        // Get the auth token from the original request
-                                        var feedbackAuthToken = "";
-
-                                        var feedbackRequestLog = logs.FirstOrDefault(l =>
-                                        {
-                                            var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
-                                            return entry?.Message?.Method == "Network.requestWillBeSent" &&
-                                                   entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
-                                        });
-
-                                        if (feedbackRequestLog != null)
-                                        {
-                                            var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(feedbackRequestLog.Message);
-                                            
-                                            if (requestEntry?.Message?.Params?.Request?.Headers != null)
-                                            {
-                                                foreach (var header in requestEntry.Message.Params.Request.Headers)
-                                                {
-                                                    if (header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
-                                                    {
-                                                        feedbackAuthToken = header.Value;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // Only proceed if we have a valid auth token
-                                        if (!string.IsNullOrEmpty(feedbackAuthToken))
-                                        {
-                                            // Ensure Artist directory exists
-                                            if (!Directory.Exists("Artist"))
-                                            {
-                                                Directory.CreateDirectory("Artist");
-                                            }
-
-                                            // Save the auth token to ArtistAuth.txt
-                                            await File.WriteAllTextAsync("Artist/ArtistAuth.txt", feedbackAuthToken);
-                                            Log.Information("Auth token saved to Artist/ArtistAuth.txt");
-                                        }
-                                    }
-                                    // Monitor artist station page API endpoint
-                                    else if (url.Contains("api.edge-gateway.siriusxm.com/page/v1/page/artist-station"))
-                                    {
-                                        Log.Information("Artist station page API request detected: {Url}", url);
-
-                                        // Get the auth token from the original request
-                                        var artistAuthToken = "";
-
-                                        var artistRequestLog = logs.FirstOrDefault(l =>
-                                        {
-                                            var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
-                                            return entry?.Message?.Method == "Network.requestWillBeSent" &&
-                                                   entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
-                                        });
-
-                                        if (artistRequestLog != null)
-                                        {
-                                            var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(artistRequestLog.Message);
-                                            
-                                            if (requestEntry?.Message?.Params?.Request?.Headers != null)
-                                            {
-                                                foreach (var header in requestEntry.Message.Params.Request.Headers)
-                                                {
-                                                    if (header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
-                                                    {
-                                                        artistAuthToken = header.Value;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // Only proceed if we have a valid auth token
-                                        if (!string.IsNullOrEmpty(artistAuthToken))
-                                        {
-                                            // Ensure Artist directory exists
-                                            if (!Directory.Exists("Artist"))
-                                            {
-                                                Directory.CreateDirectory("Artist");
-                                            }
-
-                                            // Save the auth token to ArtistAuth.txt
-                                            await File.WriteAllTextAsync("Artist/ArtistAuth.txt", artistAuthToken);
-                                            Log.Information("Auth token saved to Artist/ArtistAuth.txt");
-                                        }
-                                    }
-                                    // Monitor tuneSource endpoint
-                                    else if (url.Contains("api.edge-gateway.siriusxm.com/playback/play/v1/tuneSource"))
-                                    {
-                                        Log.Information("TuneSource request detected: {Url}", url);
-
-                                        // Get the auth token and payload from the original request
-                                        var authToken = "";
-                                        var requestPayload = "";
-
-                                        var requestLog = logs.FirstOrDefault(l =>
-                                        {
-                                            var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
-                                            return entry?.Message?.Method == "Network.requestWillBeSent" &&
-                                                   entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
-                                        });
-
-                                        if (requestLog != null)
-                                        {
-                                            var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(requestLog.Message);
-                                            
-                                            if (requestEntry?.Message?.Params?.Request?.Headers != null)
-                                            {
-                                                foreach (var header in requestEntry.Message.Params.Request.Headers)
-                                                {
-                                                    if (header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
-                                                    {
-                                                        authToken = header.Value;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-
-                                            // Get the request payload
-                                            requestPayload = requestEntry?.Message?.Params?.Request?.PostData;
-                                        }
-
-                                        // Store the last tuneSource request data
-                                        lastTuneSourceUrl = url;
-                                        lastTuneSourcePayload = requestPayload;
-                                        lastTuneSourceAuthToken = authToken;
-
-                                        // Only proceed if we have a valid auth token and payload
-                                        if (!string.IsNullOrEmpty(authToken) && !string.IsNullOrEmpty(requestPayload))
-                                        {
-                                            // Ensure Stations directory exists
-                                            if (!Directory.Exists("Stations"))
-                                            {
-                                                Directory.CreateDirectory("Stations");
-                                            }
-
-                                            // Ensure tunesource.txt exists in Stations directory
-                                            if (!File.Exists("Stations/tunesource.txt"))
-                                            {
-                                                File.Create("Stations/tunesource.txt").Dispose();
-                                            }
-
-                                            // Save the auth token to tunesource.txt (overwrite)
-                                            await File.WriteAllTextAsync("Stations/tunesource.txt", authToken);
-                                            Log.Information("Auth token saved to Stations/tunesource.txt");
-
-                                            try
-                                            {
-                                                await SendTuneSourceRequest(url, requestPayload, authToken);
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                Log.Error(ex, "Error making POST request to tuneSource endpoint");
-                                            }
-                                        }
-                                    }
-                                    // Monitor Conviva WSG endpoint
-                                    else if (url.EndsWith("conviva.com/0/wsg", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        Log.Information("Conviva WSG request detected: {Url}", url);
-
-                                        // Get the payload from the original request
-                                        var wsgPayload = "";
-
-                                        var wsgRequestLog = logs.FirstOrDefault(l =>
-                                        {
-                                            var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
-                                            return entry?.Message?.Method == "Network.requestWillBeSent" &&
-                                                   entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
-                                        });
-
-                                        if (wsgRequestLog != null)
-                                        {
-                                            var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(wsgRequestLog.Message);
-                                            wsgPayload = requestEntry?.Message?.Params?.Request?.PostData;
-                                        }
-
-                                        // Only proceed if we have a valid payload
-                                        if (!string.IsNullOrEmpty(wsgPayload))
-                                        {
-                                            try
-                                            {
-                                                // Parse the payload to check if it's a valid JSON
-                                                var jsonElement = JsonSerializer.Deserialize<JsonElement>(wsgPayload);
-                                                
-                                                // Check if the payload contains the required fwv value
-                                                bool hasRequiredFwv = false;
-                                                
-                                                // Check in pm object
-                                                if (jsonElement.TryGetProperty("pm", out var pmElement) && 
-                                                    pmElement.TryGetProperty("fwv", out var pmFwvElement) &&
-                                                    pmFwvElement.GetString() == "howler - 2.2.4")
-                                                {
-                                                    hasRequiredFwv = true;
-                                                }
-                                                
-                                                // Check in root object
-                                                if (!hasRequiredFwv && 
-                                                    jsonElement.TryGetProperty("fwv", out var rootFwvElement) &&
-                                                    rootFwvElement.GetString() == "howler - 2.2.4")
-                                                {
-                                                    hasRequiredFwv = true;
-                                                }
-
-                                                // Check if payload contains new/old objects in evs array
-                                                bool hasNewOldObjects = false;
-                                                if (jsonElement.TryGetProperty("evs", out var evsElement) && 
-                                                    evsElement.ValueKind == JsonValueKind.Array)
-                                                {
-                                                    foreach (var ev in evsElement.EnumerateArray())
-                                                    {
-                                                        if (ev.TryGetProperty("new", out _) || ev.TryGetProperty("old", out _))
-                                                        {
-                                                            hasNewOldObjects = true;
-                                                            break;
-                                                        }
-                                                    }
-                                                }
-
-                                                // Only save if the required fwv value is found and no new/old objects exist
-                                                if (hasRequiredFwv && !hasNewOldObjects)
-                                                {
-                                                    // Ensure Stations directory exists
-                                                    if (!Directory.Exists("Stations"))
-                                                    {
-                                                        Directory.CreateDirectory("Stations");
-                                                    }
-
-                                                    var formattedJson = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions 
-                                                    { 
-                                                        WriteIndented = true 
-                                                    });
-
-                                                    // Save the payload to Now.json
-                                                    await File.WriteAllTextAsync("Stations/Now.json", formattedJson);
-                                                    Log.Information("WSG payload with required fwv saved to Stations/Now.json");
-
-                                                    // Extract track information
-                                                    string artistName = "";
-                                                    string trackName = "";
-                                                    string streamUrl = "";
-
-                                                    // Get artist name - check both root level and tags
-                                                    if (jsonElement.TryGetProperty("artistName", out var artistElement))
-                                                    {
-                                                        artistName = artistElement.GetString() ?? "";
-                                                    }
-                                                    else if (jsonElement.TryGetProperty("tags", out var tagsElement) && 
-                                                             tagsElement.TryGetProperty("artistName", out var tagsArtistElement))
-                                                    {
-                                                        artistName = tagsArtistElement.GetString() ?? "";
-                                                    }
-
-                                                    // Get track name (an)
-                                                    if (jsonElement.TryGetProperty("an", out var trackElement))
-                                                    {
-                                                        trackName = trackElement.GetString() ?? "";
-                                                    }
-
-                                                    // Get stream URL
-                                                    if (jsonElement.TryGetProperty("url", out var urlElement))
-                                                    {
-                                                        streamUrl = urlElement.GetString() ?? "";
-                                                    }
-
-                                                    // Only proceed if we have a valid URL
-                                                    if (!string.IsNullOrEmpty(streamUrl))
-                                                    {
-                                                        await Dispatcher.InvokeAsync(() =>
-                                                        {
-                                                            // Check if this URL already exists in the stream entries
-                                                            var existingEntry = streamEntries.FirstOrDefault(e => e.Url == streamUrl);
-                                                            
-                                                            if (existingEntry != null)
-                                                            {
-                                                                // If the existing entry is unnamed, update it with the new information
-                                                                if (existingEntry.TrackName == "Unnamed MP4")
-                                                                {
-                                                                    existingEntry.TrackName = trackName;
-                                                                    existingEntry.ArtistName = artistName;
-                                                                    Log.Information("Updated unnamed stream entry with track info: {Track} - {Artist}", trackName, artistName);
-                                                                }
-                                                            }
-                                                            else
-                                                            {
-                                                                // Check if this track/artist combination already exists
-                                                                var duplicateEntry = streamEntries.FirstOrDefault(e => 
-                                                                    e.TrackName == trackName && 
-                                                                    e.ArtistName == artistName && 
-                                                                    !string.IsNullOrEmpty(trackName) && 
-                                                                    !string.IsNullOrEmpty(artistName));
-
-                                                                if (duplicateEntry == null)
-                                                                {
-                                                                    // Add new entry only if it's not a duplicate
-                                                                    streamEntries.Add(new StreamEntry
-                                                                    {
-                                                                        Timestamp = DateTime.Now.ToString("HH:mm:ss"),
-                                                                        StreamType = "mp4",
-                                                                        Url = streamUrl,
-                                                                        TrackName = trackName,
-                                                                        ArtistName = artistName,
-                                                                        PreferredImageUrl = null
-                                                                    });
-                                                                    Log.Information("Added new stream entry: {Track} - {Artist}", trackName, artistName);
-                                                                }
-                                                                else
-                                                                {
-                                                                    Log.Debug("Skipping duplicate stream entry: {Track} - {Artist}", trackName, artistName);
-                                                                }
-                                                            }
-                                                            UpdateTotalCapturedCount();
-                                                        });
-                                                    }
-                                                }
-                                                else
-                                                {
-                                                    if (!hasRequiredFwv)
-                                                    {
-                                                        Log.Debug("Skipping WSG payload - does not contain required fwv value");
-                                                    }
-                                                    else if (hasNewOldObjects)
-                                                    {
-                                                        Log.Debug("Skipping WSG payload - contains new/old objects in evs array");
-                                                    }
-                                                }
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                Log.Error(ex, "Error processing WSG payload");
-                                            }
-                                        }
-                                    }
-                                    // Monitor peek endpoint
-                                    else if (url.Contains("api.edge-gateway.siriusxm.com/playback/play/v1/peek"))
-                                    {
-                                        Log.Information("Peek request detected: {Url}", url);
-
-                                        // Get the auth token and payload from the original request
-                                        var peekAuthToken = "";
-                                        var peekRequestPayload = "";
-
-                                        var peekRequestLog = logs.FirstOrDefault(l =>
-                                        {
-                                            var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
-                                            return entry?.Message?.Method == "Network.requestWillBeSent" &&
-                                                   entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
-                                        });
-
-                                        if (peekRequestLog != null)
-                                        {
-                                            var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(peekRequestLog.Message);
-                                            
-                                            if (requestEntry?.Message?.Params?.Request?.Headers != null)
-                                            {
-                                                foreach (var header in requestEntry.Message.Params.Request.Headers)
-                                                {
-                                                    if (header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
-                                                    {
-                                                        peekAuthToken = header.Value;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-
-                                            // Get the request payload
-                                            peekRequestPayload = requestEntry?.Message?.Params?.Request?.PostData;
-                                        }
-
-                                        // Only proceed if we have a valid auth token and payload
-                                        if (!string.IsNullOrEmpty(peekAuthToken) && !string.IsNullOrEmpty(peekRequestPayload))
-                                        {
-                                            // Ensure Stations directory exists
-                                            if (!Directory.Exists("Stations"))
-                                            {
-                                                Directory.CreateDirectory("Stations");
-                                            }
-
-                                            // Save the auth token to peek.txt (overwrite)
-                                            await File.WriteAllTextAsync("Stations/peek.txt", peekAuthToken);
-                                            Log.Information("Auth token saved to Stations/peek.txt");
-
-                                            // Save the payload to peek_payload.json
-                                            try
-                                            {
-                                                // Format the JSON payload with proper indentation
-                                                var jsonElement = JsonSerializer.Deserialize<JsonElement>(peekRequestPayload);
-                                                var formattedJson = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions 
-                                                { 
-                                                    WriteIndented = true 
-                                                });
-                                                await File.WriteAllTextAsync("Stations/peek_payload.json", formattedJson);
-                                                Log.Information("Peek payload saved to Stations/peek_payload.json");
-
-                                                // Replay the request
-                                                using (var httpClient = new HttpClient())
-                                                {
-                                                    httpClient.DefaultRequestHeaders.Add("Authorization", peekAuthToken);
-                                                    httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-                                                    
-                                                    var content = new StringContent(
-                                                        peekRequestPayload,
-                                                        System.Text.Encoding.UTF8,
-                                                        "application/json"
-                                                    );
-                                                    
-                                                    var response = await httpClient.PostAsync(url, content);
-                                                    var peekResponseBody = await response.Content.ReadAsStringAsync();
-
-                                                    if (response.IsSuccessStatusCode)
-                                                    {
-                                                        // Format the JSON response with proper indentation
-                                                        var responseElement = JsonSerializer.Deserialize<JsonElement>(peekResponseBody);
-                                                        var formattedResponse = JsonSerializer.Serialize(responseElement, new JsonSerializerOptions 
-                                                        { 
-                                                            WriteIndented = true 
-                                                        });
-
-                                                        // Save the formatted JSON to peek_response.json
-                                                        await File.WriteAllTextAsync("Stations/peek_response.json", formattedResponse);
-                                                        Log.Information("Peek response saved to Stations/peek_response.json");
-
-                                                        // Process stream information from peek response
-                                                        if (responseElement.TryGetProperty("streams", out var streamsElement) && streamsElement.ValueKind == JsonValueKind.Array)
-                                                        {
-                                                            foreach (var stream in streamsElement.EnumerateArray())
-                                                            {
-                                                                if (stream.TryGetProperty("metadata", out var metadata) &&
-                                                                    metadata.TryGetProperty("artist", out var artist) &&
-                                                                    artist.TryGetProperty("items", out var items) &&
-                                                                    items.ValueKind == JsonValueKind.Array)
-                                                                {
-                                                                    foreach (var item in items.EnumerateArray())
-                                                                    {
-                                                                        if (item.TryGetProperty("name", out var nameElement) &&
-                                                                            item.TryGetProperty("artistName", out var artistNameElement))
-                                                                        {
-                                                                            var trackName = nameElement.GetString();
-                                                                            var artistName = artistNameElement.GetString();
-
-                                                                            if (stream.TryGetProperty("urls", out var urls) &&
-                                                                                urls.ValueKind == JsonValueKind.Array)
-                                                                            {
-                                                                                foreach (var urlEntry in urls.EnumerateArray())
-                                                                                {
-                                                                                    if (urlEntry.TryGetProperty("url", out var urlElement) &&
-                                                                                        urlEntry.TryGetProperty("isPrimary", out var isPrimaryElement) &&
-                                                                                        isPrimaryElement.GetBoolean())
-                                                                                    {
-                                                                                        var streamUrl = urlElement.GetString();
-                                                                                        StreamEntry existingEntry;
-                                                                                        // Check if this is a duplicate file
-                                                                                        if (IsDuplicateStream(streamUrl, out existingEntry))
-                                                                                        {
-                                                                                            // If the existing entry is unnamed, update it with the title information
-                                                                                            if (existingEntry.TrackName == "Unnamed MP4")
-                                                                                            {
-                                                                                                await Dispatcher.InvokeAsync(() =>
-                                                                                                {
-                                                                                                    existingEntry.TrackName = trackName;
-                                                                                                    existingEntry.ArtistName = artistName;
-                                                                                                    // Refresh the ListView to show the updated information
-                                                                                                    StreamListView.Items.Refresh();
-                                                                                                });
-                                                                                                Log.Information("Updated unnamed entry with title: {TrackName} - {ArtistName}", trackName, artistName);
-                                                                                            }
-                                                                                            Log.Debug("Skipping duplicate stream URL: {Url}", streamUrl);
-                                                                                            continue;
-                                                                                        }
-                                                                                        await Dispatcher.InvokeAsync(() =>
-                                                                                        {
-                                                                                            string preferredImageUrl = null;
-                                                                                            if (stream.TryGetProperty("metadata", out var metadata) &&
-                                                                                                metadata.TryGetProperty("artist", out var artist) &&
-                                                                                                artist.TryGetProperty("items", out var items) &&
-                                                                                                items.ValueKind == JsonValueKind.Array &&
-                                                                                                items.GetArrayLength() > 0)
-                                                                                            {
-                                                                                                var firstItem = items[0];
-                                                                                                if (firstItem.TryGetProperty("images", out var images) &&
-                                                                                                    images.TryGetProperty("tile", out var tile) &&
-                                                                                                    tile.TryGetProperty("aspect_1x1", out var aspect) &&
-                                                                                                    aspect.TryGetProperty("preferredImage", out var preferredImage) &&
-                                                                                                    preferredImage.TryGetProperty("url", out var imageUrl))
-                                                                                                {
-                                                                                                    preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
-                                                                                                }
-                                                                                            }
-
-                                                                                            streamEntries.Add(new StreamEntry
-                                                                                            {
-                                                                                                Timestamp = DateTime.Now.ToString("HH:mm:ss"),
-                                                                                                StreamType = "mp4",
-                                                                                                Url = streamUrl,
-                                                                                                TrackName = trackName,
-                                                                                                ArtistName = artistName,
-                                                                                                PreferredImageUrl = preferredImageUrl
-                                                                                            });
-                                                                                            UpdateTotalCapturedCount();
-                                                                                        });
-                                                                                        break;
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    else
-                                                    {
-                                                        Log.Warning("Failed to get response from peek endpoint. Status code: {StatusCode}", response.StatusCode);
-                                                    }
-                                                }
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                Log.Error(ex, "Error processing peek request");
-                                            }
-                                        }
-                                    }
-                                    // Monitor playback key endpoint
-                                    else if (url.Contains("api.edge-gateway.siriusxm.com/playback/key/v1/"))
-                                    {
-                                        Log.Information("Playback key request detected: {Url}", url);
-
-                                        var keyAuthToken = "";
-
-                                        var keyRequestLog = logs.FirstOrDefault(l =>
-                                        {
-                                            var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
-                                            return entry?.Message?.Method == "Network.requestWillBeSent" &&
-                                                   entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
-                                        });
-
-                                        if (keyRequestLog != null)
-                                        {
-                                            var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(keyRequestLog.Message);
-
-                                            if (requestEntry?.Message?.Params?.Request?.Headers != null)
-                                            {
-                                                foreach (var header in requestEntry.Message.Params.Request.Headers)
-                                                {
-                                                    if (header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
-                                                    {
-                                                        keyAuthToken = header.Value;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        if (!string.IsNullOrEmpty(keyAuthToken))
-                                        {
-                                            try
-                                            {
-                                                using var httpClient = new HttpClient();
-                                                httpClient.DefaultRequestHeaders.Add("Authorization", keyAuthToken);
-                                                httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-
-                                                var response = await httpClient.GetAsync(url);
-                                                var body = await response.Content.ReadAsStringAsync();
-
-                                                if (response.IsSuccessStatusCode)
-                                                {
-                                                    // Ensure directory exists
-                                                    if (!Directory.Exists("HLSKey"))
-                                                    {
-                                                        Directory.CreateDirectory("HLSKey");
-                                                    }
-
-                                                    // Save bearer token for reference
-                                                    await File.WriteAllTextAsync("HLSKey/authorization Bearer.txt", keyAuthToken);
-
-                                                    // Save prettified JSON
-                                                    var jsonElement = JsonSerializer.Deserialize<JsonElement>(body);
-                                                    var formatted = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions { WriteIndented = true });
-                                                    await File.WriteAllTextAsync("HLSKey/response.json", formatted);
-                                                    Log.Information("Playback key saved to HLSKey/response.json");
-                                                }
-                                                else
-                                                {
-                                                    Log.Warning("Playback key request failed: {StatusCode}", response.StatusCode);
-                                                }
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                Log.Error(ex, "Error fetching playback key response");
-                                            }
-                                        }
-                                        else
-                                        {
-                                            Log.Warning("Missing auth token for playback key request; skipping fetch.");
-                                        }
-                                    }
-                                    // Capture bearer from user-event submit when cookies are missing
-                                    else if (_captureBearer && url.Contains("api.edge-gateway.siriusxm.com/user-event/v1/events/submit"))
-                                    {
-                                        try
-                                        {
-                                            string bearerToken = null;
-
-                                            var submitRequestLog = logs.FirstOrDefault(l =>
-                                            {
-                                                var entry = JsonSerializer.Deserialize<PerformanceLogEntry>(l.Message);
-                                                return entry?.Message?.Method == "Network.requestWillBeSent" &&
-                                                       entry?.Message?.Params?.RequestId == logEntry.Message.Params?.RequestId;
-                                            });
-
-                                        if (submitRequestLog != null)
-                                            {
-                                                var requestEntry = JsonSerializer.Deserialize<PerformanceLogEntry>(submitRequestLog.Message);
-                                                if (requestEntry?.Message?.Params?.Request?.Headers != null &&
-                                                    requestEntry.Message.Params.Request.Headers.TryGetValue("Authorization", out var authHeader) &&
-                                                    authHeader.StartsWith("Bearer", StringComparison.OrdinalIgnoreCase))
-                                                {
-                                                    bearerToken = authHeader;
-                                                }
-                                            }
-
-                                            if (!string.IsNullOrWhiteSpace(bearerToken))
-                                            {
-                                                Directory.CreateDirectory("Login");
-                                                await File.WriteAllTextAsync("Login/authorization Bearer.txt", bearerToken);
-                                                _captureBearer = false;
-                                                _ = Task.Run(() => AttemptAutoLoginWithCreds(bearerToken));
-                                                Log.Information("Captured bearer token from user-event submit and saved to Login/authorization Bearer.txt");
-                                            }
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            Log.Error(ex, "Error capturing bearer token from user-event submit");
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Debug(ex, "Error processing log entry");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Error in monitoring loop");
-            }
-
-            await Task.Delay(1000, cancellationToken);
-        }
-    }
-
-
-    private async Task NavigateWithRetry(IWebDriver driver, string url, int maxRetries = 3)
-    {
-        for (int i = 0; i < maxRetries; i++)
-        {
-            try
-            {
-                driver.Navigate().GoToUrl(url);
-                await Task.Delay(2000);
-                return;
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Navigation attempt {Attempt} failed for URL: {Url}", i + 1, url);
-                if (i == maxRetries - 1)
-                    throw;
-                await Task.Delay(2000 * (i + 1));
-            }
-        }
-    }
-
     private void DownloadButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button button && button.DataContext is StreamEntry item)
@@ -1424,17 +635,16 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (sender is Button button && button.DataContext is StreamEntry entry && currentTrack != null)
+            if (sender is Button button && button.DataContext is StreamEntry entry)
             {
-                var newTrack = string.IsNullOrWhiteSpace(currentTrack.TrackName) ? entry.TrackName : currentTrack.TrackName;
-                var newArtist = string.IsNullOrWhiteSpace(currentTrack.StationName) ? entry.ArtistName : currentTrack.StationName;
-                var newArt = string.IsNullOrWhiteSpace(currentTrack.AlbumArtUrl) ? entry.PreferredImageUrl : currentTrack.AlbumArtUrl;
+                var newTrack = string.IsNullOrWhiteSpace(_currentTrack.TrackName) ? entry.TrackName : _currentTrack.TrackName;
+                var newArtist = string.IsNullOrWhiteSpace(_currentTrack.StationName) ? entry.ArtistName : _currentTrack.StationName;
+                var newArt = string.IsNullOrWhiteSpace(_currentTrack.AlbumArtUrl) ? entry.PreferredImageUrl : _currentTrack.AlbumArtUrl;
 
                 entry.TrackName = newTrack;
                 entry.ArtistName = newArtist;
                 entry.PreferredImageUrl = newArt;
 
-                // Refresh UI
                 StreamListView.Items.Refresh();
                 StatusText.Text = "Applied Now Playing metadata to selected stream.";
                 Log.Information("Applied Now Playing metadata to stream: {Track} - {Artist}", newTrack, newArtist);
@@ -1462,724 +672,62 @@ public partial class MainWindow : Window
         }
     }
 
-
-    protected override void OnClosed(EventArgs e)
-    {
-        base.OnClosed(e);
-        stationFeedbackWatcher?.Dispose();
-        StopMonitoring().Wait();
-        ClearSensitiveFiles();
-        Log.CloseAndFlush();
-    }
-
-    private void ClearSensitiveFiles()
-    {
-        try
-        {
-            ClearFileContents(IOPath.Combine("Login", "authorization Bearer.txt"));
-            ClearFileContents(IOPath.Combine("Artist", "ArtistAuth.txt"));
-            ClearFileContents(IOPath.Combine("HLSKey", "authorization Bearer.txt"));
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "ClearSensitiveFiles encountered an error");
-        }
-    }
-
-    private void ClearFileContents(string path)
-    {
-        try
-        {
-            if (File.Exists(path))
-            {
-                File.WriteAllText(path, string.Empty);
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "Failed to clear {Path}", path);
-        }
-    }
-
-    private void Window_Loaded(object sender, RoutedEventArgs e)
-    {
-        UpdateResponsiveLayout();
-    }
-
-    private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        UpdateResponsiveLayout();
-    }
-
-    private void UpdateResponsiveLayout()
-    {
-        try
-        {
-            // Scale based on window size relative to base design
-            double widthRatio = ActualWidth / BaseWidth;
-            double heightRatio = ActualHeight / BaseHeight;
-            double scale = Math.Min(MaxScale, Math.Max(MinScale, Math.Min(widthRatio, heightRatio)));
-
-            RootScale.ScaleX = scale;
-            RootScale.ScaleY = scale;
-
-            // Collapse artist section on narrow widths
-            bool collapseRight = ActualWidth < 1050;
-            if (collapseRight)
-            {
-                RightColumn.Width = new GridLength(0);
-                LeftColumn.Width = new GridLength(1, GridUnitType.Star);
-                ArtistSectionBorder.Visibility = Visibility.Collapsed;
-            }
-            else
-            {
-                RightColumn.Width = new GridLength(1, GridUnitType.Star);
-                LeftColumn.Width = new GridLength(1, GridUnitType.Star);
-                ArtistSectionBorder.Visibility = Visibility.Visible;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "Error applying responsive layout");
-        }
-    }
-
-    private async Task ProcessArtistStationUrl(string url)
-    {
-        await artistStations?.ProcessArtistStationUrl(url);
-    }
-
-    private async void PlayArtistStation_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button button && button.DataContext is Artist.ArtistEntry entry)
-        {
-            await artistStations?.PlayArtistStation(entry, status => StatusText.Text = status);
-        }
-    }
-
     private void ClearStreams_Click(object sender, RoutedEventArgs e)
     {
-        streamEntries.Clear();
+        _streamEntries.Clear();
         UpdateTotalCapturedCount();
         StatusText.Text = "Stream activity cleared";
         Log.Information("Stream activity cleared");
     }
 
-    private void UpdateTotalCapturedCount()
+    private void ToggleFavorite_Click(object sender, RoutedEventArgs e)
     {
-        Dispatcher.Invoke(() =>
-        {
-            TotalCapturedCount.Text = streamEntries.Count.ToString();
-        });
+        if (sender is Button button && button.DataContext is ArtistEntry entry)
+            _artistStations?.ToggleFavorite(button, entry);
     }
 
-    private void SetupStationFeedbackWatcher()
+    private async void PlayArtistStation_Click(object sender, RoutedEventArgs e)
     {
-        try
-        {
-            stationFeedbackWatcher = new FileSystemWatcher("Stations");
-            stationFeedbackWatcher.Filter = "station_feedback.json";
-            stationFeedbackWatcher.NotifyFilter = NotifyFilters.LastWrite;
-            stationFeedbackWatcher.Changed += OnStationFeedbackChanged;
-            stationFeedbackWatcher.EnableRaisingEvents = true;
-            Log.Information("Station feedback file watcher initialized");
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error setting up station feedback watcher");
-        }
-    }
-
-    private async void OnStationFeedbackChanged(object sender, FileSystemEventArgs e)
-    {
-        try
-        {
-            // Wait a short moment to ensure the file is completely written
-            await Task.Delay(100);
-
-            if (!string.IsNullOrEmpty(lastTuneSourceUrl) && 
-                !string.IsNullOrEmpty(lastTuneSourcePayload) && 
-                !string.IsNullOrEmpty(lastTuneSourceAuthToken))
-            {
-                Log.Information("Station feedback updated, sending tuneSource request");
-                await SendTuneSourceRequest(lastTuneSourceUrl, lastTuneSourcePayload, lastTuneSourceAuthToken);
-            }
-            else
-            {
-                Log.Warning("Cannot send tuneSource request - missing previous request data");
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error handling station feedback change");
-        }
-    }
-
-    private async Task SendTuneSourceRequest(string url, string payload, string authToken)
-    {
-        try
-        {
-            using (var httpClient = new HttpClient())
-            {
-                httpClient.DefaultRequestHeaders.Add("Authorization", authToken);
-                httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-                
-                var content = new StringContent(
-                    payload,
-                    System.Text.Encoding.UTF8,
-                    "application/json"
-                );
-                
-                var response = await httpClient.PostAsync(url, content);
-                var responseBody = await response.Content.ReadAsStringAsync();
-
-                if (response.IsSuccessStatusCode)
-                {
-                    var jsonElement = JsonSerializer.Deserialize<JsonElement>(responseBody);
-                    var formattedJson = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions 
-                    { 
-                        WriteIndented = true 
-                    });
-
-                    await File.WriteAllTextAsync("Stations/Playlist.json", formattedJson);
-                    Log.Information("Response saved to Stations/Playlist.json");
-
-                    // Check for podcast episodes and channel-linear in the response
-                    if (jsonElement.TryGetProperty("type", out var typeElement))
-                    {
-                        var type = typeElement.GetString();
-                        if (type == "episode-podcast")
-                        {
-                            Log.Information("Podcast episode detected in playlist: {Id}", 
-                                jsonElement.TryGetProperty("id", out var idElement) ? idElement.GetString() : "unknown");
-
-                            // Process podcast streams
-                            if (jsonElement.TryGetProperty("streams", out var podcastStreamsElement) && 
-                                podcastStreamsElement.ValueKind == JsonValueKind.Array)
-                            {
-                                foreach (var stream in podcastStreamsElement.EnumerateArray())
-                                {
-                                    if (stream.TryGetProperty("urls", out var urls) && 
-                                        urls.ValueKind == JsonValueKind.Array)
-                                    {
-                                        foreach (var urlEntry in urls.EnumerateArray())
-                                        {
-                                            if (urlEntry.TryGetProperty("isPrimary", out var isPrimaryElement) && 
-                                                isPrimaryElement.GetBoolean() &&
-                                                urlEntry.TryGetProperty("url", out var urlElement))
-                                            {
-                                                string streamUrl = urlElement.GetString();
-                                                string episodeName = "Unknown Episode";
-                                                string showName = "Unknown Show";
-                                                string preferredImageUrl = null;
-
-                                                // Get metadata
-                                                if (stream.TryGetProperty("metadata", out var metadata) &&
-                                                    metadata.TryGetProperty("podcast", out var podcast) &&
-                                                    podcast.TryGetProperty("episode", out var episode))
-                                                {
-                                                    if (episode.TryGetProperty("name", out var nameElement))
-                                                    {
-                                                        episodeName = nameElement.GetString();
-                                                    }
-                                                    if (episode.TryGetProperty("showName", out var showNameElement))
-                                                    {
-                                                        showName = showNameElement.GetString();
-                                                    }
-                                                    if (episode.TryGetProperty("showImages", out var showImages) &&
-                                                        showImages.TryGetProperty("tile", out var tile) &&
-                                                        tile.TryGetProperty("aspect_1x1", out var aspect) &&
-                                                        aspect.TryGetProperty("preferredImage", out var preferredImage) &&
-                                                        preferredImage.TryGetProperty("url", out var imageUrl))
-                                                    {
-                                                        preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
-                                                    }
-                                                }
-
-                                                await Dispatcher.InvokeAsync(() =>
-                                                {
-                                                    streamEntries.Add(new StreamEntry
-                                                    {
-                                                        Timestamp = DateTime.Now.ToString("HH:mm:ss"),
-                                                        StreamType = "podcast",
-                                                        Url = streamUrl,
-                                                        TrackName = episodeName,
-                                                        ArtistName = showName,
-                                                        PreferredImageUrl = preferredImageUrl
-                                                    });
-                                                    UpdateTotalCapturedCount();
-                                                });
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        else if (type == "episode-video")
-                        {
-                            Log.Information("Video episode detected in playlist: {Id}", 
-                                jsonElement.TryGetProperty("id", out var idElement) ? idElement.GetString() : "unknown");
-
-                            // Process video episode streams (M3U8)
-                            if (jsonElement.TryGetProperty("streams", out var videoStreamsElement) && 
-                                videoStreamsElement.ValueKind == JsonValueKind.Array)
-                            {
-                                foreach (var stream in videoStreamsElement.EnumerateArray())
-                                {
-                                    if (stream.TryGetProperty("urls", out var urls) && 
-                                        urls.ValueKind == JsonValueKind.Array)
-                                    {
-                                        foreach (var urlEntry in urls.EnumerateArray())
-                                        {
-                                            if (urlEntry.TryGetProperty("name", out var nameElement) &&
-                                                nameElement.GetString() == "primary" &&
-                                                urlEntry.TryGetProperty("url", out var urlElement))
-                                            {
-                                                string streamUrl = urlElement.GetString();
-                                                string episodeName = "Unknown Episode";
-                                                string channelName = "Unknown Channel";
-                                                string preferredImageUrl = null;
-
-                                                // Get metadata from metadata.vod.episode
-                                                if (jsonElement.TryGetProperty("metadata", out var metadata) &&
-                                                    metadata.TryGetProperty("vod", out var vod) &&
-                                                    vod.TryGetProperty("episode", out var episode))
-                                                {
-                                                    if (episode.TryGetProperty("name", out var episodeNameElement))
-                                                    {
-                                                        episodeName = episodeNameElement.GetString();
-                                                    }
-                                                    if (vod.TryGetProperty("channelName", out var channelNameElement))
-                                                    {
-                                                        channelName = channelNameElement.GetString();
-                                                    }
-                                                    if (episode.TryGetProperty("images", out var images) &&
-                                                        images.TryGetProperty("tile", out var tile) &&
-                                                        tile.TryGetProperty("aspect_1x1", out var aspect) &&
-                                                        aspect.TryGetProperty("preferredImage", out var preferredImage) &&
-                                                        preferredImage.TryGetProperty("url", out var imageUrl))
-                                                    {
-                                                        preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
-                                                    }
-                                                }
-
-                                                // Check if this URL already exists in the stream entries
-                                                StreamEntry existingEntry;
-                                                if (IsDuplicateStream(streamUrl, out existingEntry))
-                                                {
-                                                    // If the existing entry is unnamed, update it with the metadata
-                                                    if (existingEntry.TrackName == "Unnamed M3U8")
-                                                    {
-                                                        await Dispatcher.InvokeAsync(() =>
-                                                        {
-                                                            existingEntry.TrackName = episodeName;
-                                                            existingEntry.ArtistName = channelName;
-                                                            existingEntry.PreferredImageUrl = preferredImageUrl;
-                                                            // Refresh the ListView to show the updated information
-                                                            StreamListView.Items.Refresh();
-                                                        });
-                                                        Log.Information("Updated unnamed M3U8 entry with metadata: {TrackName} - {ArtistName}", episodeName, channelName);
-                                                    }
-                                                    Log.Debug("Skipping duplicate M3U8 stream URL: {Url}", streamUrl);
-                                                    continue;
-                                                }
-
-                                                await Dispatcher.InvokeAsync(() =>
-                                                {
-                                                    streamEntries.Add(new StreamEntry
-                                                    {
-                                                        Timestamp = DateTime.Now.ToString("HH:mm:ss"),
-                                                        StreamType = "m3u8",
-                                                        Url = streamUrl,
-                                                        TrackName = episodeName,
-                                                        ArtistName = channelName,
-                                                        PreferredImageUrl = preferredImageUrl
-                                                    });
-                                                    UpdateTotalCapturedCount();
-                                                });
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        else if (type == "episode-audio")
-                        {
-                            Log.Information("Audio episode detected in playlist: {Id}", 
-                                jsonElement.TryGetProperty("id", out var idElement) ? idElement.GetString() : "unknown");
-
-                            // Process audio episode streams (M3U8)
-                            if (jsonElement.TryGetProperty("streams", out var audioStreamsElement) && 
-                                audioStreamsElement.ValueKind == JsonValueKind.Array)
-                            {
-                                foreach (var stream in audioStreamsElement.EnumerateArray())
-                                {
-                                    if (stream.TryGetProperty("urls", out var urls) && 
-                                        urls.ValueKind == JsonValueKind.Array)
-                                    {
-                                        foreach (var urlEntry in urls.EnumerateArray())
-                                        {
-                                            if (urlEntry.TryGetProperty("name", out var nameElement) &&
-                                                nameElement.GetString() == "primary" &&
-                                                urlEntry.TryGetProperty("url", out var urlElement))
-                                            {
-                                                string streamUrl = urlElement.GetString();
-                                                string episodeName = "Unknown Episode";
-                                                string channelName = "Unknown Channel";
-                                                string preferredImageUrl = null;
-
-                                                // Get metadata from metadata.aod.episode
-                                                if (stream.TryGetProperty("metadata", out var metadata) &&
-                                                    metadata.TryGetProperty("aod", out var aod) &&
-                                                    aod.TryGetProperty("episode", out var episode))
-                                                {
-                                                    if (episode.TryGetProperty("name", out var episodeNameElement))
-                                                    {
-                                                        episodeName = episodeNameElement.GetString();
-                                                    }
-                                                    if (aod.TryGetProperty("channelName", out var channelNameElement))
-                                                    {
-                                                        channelName = channelNameElement.GetString();
-                                                    }
-                                                    if (episode.TryGetProperty("images", out var images) &&
-                                                        images.TryGetProperty("tile", out var tile) &&
-                                                        tile.TryGetProperty("aspect_1x1", out var aspect) &&
-                                                        aspect.TryGetProperty("preferredImage", out var preferredImage) &&
-                                                        preferredImage.TryGetProperty("url", out var imageUrl))
-                                                    {
-                                                        preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
-                                                    }
-                                                }
-
-                                                // Check if this URL already exists in the stream entries
-                                                StreamEntry existingEntry;
-                                                if (IsDuplicateStream(streamUrl, out existingEntry))
-                                                {
-                                                    // If the existing entry is unnamed, update it with the metadata
-                                                    if (existingEntry.TrackName == "Unnamed M3U8")
-                                                    {
-                                                        await Dispatcher.InvokeAsync(() =>
-                                                        {
-                                                            existingEntry.TrackName = episodeName;
-                                                            existingEntry.ArtistName = channelName;
-                                                            existingEntry.PreferredImageUrl = preferredImageUrl;
-                                                            // Refresh the ListView to show the updated information
-                                                            StreamListView.Items.Refresh();
-                                                        });
-                                                        Log.Information("Updated unnamed M3U8 entry with metadata: {TrackName} - {ArtistName}", episodeName, channelName);
-                                                    }
-                                                    Log.Debug("Skipping duplicate M3U8 stream URL: {Url}", streamUrl);
-                                                    continue;
-                                                }
-
-                                                await Dispatcher.InvokeAsync(() =>
-                                                {
-                                                    streamEntries.Add(new StreamEntry
-                                                    {
-                                                        Timestamp = DateTime.Now.ToString("HH:mm:ss"),
-                                                        StreamType = "m3u8",
-                                                        Url = streamUrl,
-                                                        TrackName = episodeName,
-                                                        ArtistName = channelName,
-                                                        PreferredImageUrl = preferredImageUrl
-                                                    });
-                                                    UpdateTotalCapturedCount();
-                                                });
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        else if (type == "channel-linear")
-                        {
-                            Log.Information("Channel Linear detected in playlist: {Id}", 
-                                jsonElement.TryGetProperty("id", out var idElement) ? idElement.GetString() : "unknown");
-                        }
-                    }
-
-                    // Process stream information
-                    if (jsonElement.TryGetProperty("streams", out var streamsElement) && streamsElement.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var stream in streamsElement.EnumerateArray())
-                        {
-                            if (stream.TryGetProperty("metadata", out var metadata))
-                            {
-                                string trackName = "Unknown";
-                                string artistName = "Unknown";
-                                string preferredImageUrl = null;
-
-                                // Primary: artist items (music)
-                                if (metadata.TryGetProperty("artist", out var artist) &&
-                                artist.TryGetProperty("items", out var items) &&
-                                items.ValueKind == JsonValueKind.Array)
-                            {
-                                foreach (var item in items.EnumerateArray())
-                                {
-                                    if (item.TryGetProperty("name", out var nameElement) &&
-                                        item.TryGetProperty("artistName", out var artistNameElement))
-                                    {
-                                            trackName = nameElement.GetString() ?? trackName;
-                                            artistName = artistNameElement.GetString() ?? artistName;
-
-                                            if (item.TryGetProperty("images", out var images) &&
-                                                images.TryGetProperty("tile", out var tile) &&
-                                                tile.TryGetProperty("aspect_1x1", out var aspect) &&
-                                                aspect.TryGetProperty("preferredImage", out var preferredImage) &&
-                                                preferredImage.TryGetProperty("url", out var imageUrl))
-                                            {
-                                                preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
-                                            }
-                                            break;
-                                        }
-                                    }
-                                }
-                                // Fallback: aod episodes (talk/podcast linear)
-                                else if (metadata.TryGetProperty("aod", out var aod) &&
-                                         aod.TryGetProperty("episode", out var episode))
-                                {
-                                    if (episode.TryGetProperty("name", out var epName))
-                                    {
-                                        trackName = epName.GetString() ?? trackName;
-                                    }
-
-                                    if (aod.TryGetProperty("channelName", out var channelNameProp))
-                                    {
-                                        artistName = channelNameProp.GetString() ?? artistName;
-                                    }
-                                    else if (episode.TryGetProperty("showName", out var showNameProp))
-                                    {
-                                        artistName = showNameProp.GetString() ?? artistName;
-                                    }
-
-                                    // images in episode.images
-                                    if (episode.TryGetProperty("images", out var epImages) &&
-                                        epImages.TryGetProperty("tile", out var tile) &&
-                                        tile.TryGetProperty("aspect_1x1", out var aspect) &&
-                                        aspect.TryGetProperty("preferredImage", out var preferredImage) &&
-                                        preferredImage.TryGetProperty("url", out var imageUrl))
-                                    {
-                                        preferredImageUrl = StreamEntry.DecodeImageUrl(imageUrl.GetString());
-                                    }
-                                    // fallback: showImages
-                                    else if (episode.TryGetProperty("showImages", out var showImages) &&
-                                             showImages.TryGetProperty("tile", out var sTile) &&
-                                             sTile.TryGetProperty("aspect_1x1", out var sAspect) &&
-                                             sAspect.TryGetProperty("preferredImage", out var sPreferred) &&
-                                             sPreferred.TryGetProperty("url", out var sUrl))
-                                    {
-                                        preferredImageUrl = StreamEntry.DecodeImageUrl(sUrl.GetString());
-                                    }
-                                }
-
-                                        if (stream.TryGetProperty("urls", out var urls) &&
-                                            urls.ValueKind == JsonValueKind.Array)
-                                        {
-                                            foreach (var urlEntry in urls.EnumerateArray())
-                                            {
-                                                if (urlEntry.TryGetProperty("url", out var urlElement) &&
-                                                    urlEntry.TryGetProperty("isPrimary", out var isPrimaryElement) &&
-                                                    isPrimaryElement.GetBoolean())
-                                                {
-                                                    var streamUrl = urlElement.GetString();
-                                                    StreamEntry existingEntry;
-                                                    // Check if this is a duplicate file
-                                                    if (IsDuplicateStream(streamUrl, out existingEntry))
-                                                    {
-                                                        // If the existing entry is unnamed, update it with the title information
-                                                        if (existingEntry.TrackName == "Unnamed MP4")
-                                                        {
-                                                            await Dispatcher.InvokeAsync(() =>
-                                                            {
-                                                                existingEntry.TrackName = trackName;
-                                                                existingEntry.ArtistName = artistName;
-                                                        existingEntry.PreferredImageUrl = preferredImageUrl ?? existingEntry.PreferredImageUrl;
-                                                                StreamListView.Items.Refresh();
-                                                            });
-                                                            Log.Information("Updated unnamed entry with title: {TrackName} - {ArtistName}", trackName, artistName);
-                                                        }
-                                                        Log.Debug("Skipping duplicate stream URL: {Url}", streamUrl);
-                                                        continue;
-                                                    }
-                                                    await Dispatcher.InvokeAsync(() =>
-                                                    {
-                                                        streamEntries.Add(new StreamEntry
-                                                        {
-                                                            Timestamp = DateTime.Now.ToString("HH:mm:ss"),
-                                                            StreamType = "mp4",
-                                                            Url = streamUrl,
-                                                            TrackName = trackName,
-                                                            ArtistName = artistName,
-                                                            PreferredImageUrl = preferredImageUrl
-                                                        });
-                                                        UpdateTotalCapturedCount();
-                                                    });
-                                                    break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    Log.Warning("Failed to get response from tuneSource endpoint. Status code: {StatusCode}", response.StatusCode);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error making POST request to tuneSource endpoint");
-        }
+        if (sender is Button button && button.DataContext is ArtistEntry entry)
+            await (_artistStations?.PlayArtistStation(entry, status => StatusText.Text = status) ?? Task.CompletedTask);
     }
 
     private async void PauseButton_Click(object sender, RoutedEventArgs e)
     {
-        // Debounce rapid clicks
-        if ((DateTime.Now - _lastControlClick).TotalMilliseconds < CONTROL_CLICK_DEBOUNCE_MS)
+        if ((DateTime.Now - _lastControlClick).TotalMilliseconds < ControlClickDebounceMs)
             return;
         _lastControlClick = DateTime.Now;
 
-        if (driver == null || !IsMonitoring) return;
+        var core = _sessionService?.CoreWebView2;
+        if (core == null || !IsMonitoring)
+            return;
 
-        // Disable button temporarily to prevent double-clicks
         if (sender is Button button)
-        {
             button.IsEnabled = false;
-        }
 
         try
         {
-            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
-            IWebElement? targetButton = null;
-            bool shouldPause = !_isPaused;
+            var shouldPause = !_isPaused;
+            var success = await _playbackService.TogglePauseAsync(core);
 
-            // Try multiple strategies to find the button
-            var strategies = new List<Func<IWebDriver, IWebElement?>>
+            if (!success)
             {
-                // Strategy 1: aria-label
-                d => {
-                    try
-                    {
-                        return d.FindElement(By.CssSelector($"button[aria-label='{(shouldPause ? "Pause" : "Play")}']"));
-                    }
-                    catch { return null; }
-                },
-                // Strategy 2: aria-label case insensitive
-                d => {
-                    try
-                    {
-                        var buttons = d.FindElements(By.TagName("button"));
-                        var searchTerm = shouldPause ? "Pause" : "Play";
-                        return buttons.FirstOrDefault(b => 
-                        {
-                            var ariaLabel = b.GetAttribute("aria-label");
-                            return !string.IsNullOrEmpty(ariaLabel) && 
-                                   ariaLabel.Contains(searchTerm, StringComparison.OrdinalIgnoreCase);
-                        });
-                    }
-                    catch { return null; }
-                },
-                // Strategy 3: SVG path matching
-                d => {
-                    try
-                    {
-                        var svgPath = shouldPause 
-                            ? "M7 2.754a2 2 0 0 0-2 2v14.492a2 2 0 0 0 4 0V4.754a2 2 0 0 0-2-2m10 0a2 2 0 0 0-2 2v14.492a2 2 0 0 0 4 0V4.754a2 2 0 0 0-2-2"
-                            : "M20.692 10.702c1 .577 1 2.02 0 2.598L7.19 21.094a1.5 1.5 0 0 1-2.25-1.299V4.206a1.5 1.5 0 0 1 2.25-1.298z";
-                        var path = d.FindElement(By.CssSelector($"svg path[d*='{svgPath.Substring(0, 20)}']"));
-                        return path.FindElement(By.XPath("./ancestor::button"));
-                    }
-                    catch { return null; }
-                }
-            };
-
-            // Try each strategy with retries
-            for (int attempt = 0; attempt < 3; attempt++)
-            {
-                foreach (var strategy in strategies)
-                {
-                    try
-                    {
-                        targetButton = wait.Until(d =>
-                        {
-                            var element = strategy(d);
-                            if (element != null && element.Displayed && element.Enabled)
-                            {
-                                return element;
-                            }
-                            return null;
-                        });
-
-                        if (targetButton != null) break;
-                    }
-                    catch { }
-                }
-
-                if (targetButton != null) break;
-                await Task.Delay(300 * (attempt + 1)); // Exponential backoff
-            }
-
-            if (targetButton == null)
-            {
-                await Dispatcher.InvokeAsync(() => StatusText.Text = "Could not find play/pause button");
-                Log.Warning("Could not find play/pause button after multiple attempts");
+                StatusText.Text = "Could not find play/pause button";
                 return;
             }
 
-            // Scroll into view and ensure it's clickable
-            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", targetButton);
-            await Task.Delay(100); // Small delay for smooth scroll
-
-            // Use JavaScript click for more reliability
-            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", targetButton);
-
-            // Update state
             _isPaused = shouldPause;
-            
-            // Update UI
-            await Dispatcher.InvokeAsync(() =>
-            {
-                if (sender is Button btn)
-                {
-                    var pauseIcon = btn.FindName("PauseIcon") as System.Windows.Shapes.Path;
-                    var playIcon = btn.FindName("PlayIcon") as System.Windows.Shapes.Path;
-                    if (pauseIcon != null && playIcon != null)
-                    {
-                        if (shouldPause)
-                        {
-                            pauseIcon.Visibility = Visibility.Collapsed;
-                            playIcon.Visibility = Visibility.Visible;
-                            playIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA"));
-                        }
-                        else
-                    {
-                        pauseIcon.Visibility = Visibility.Visible;
-                        playIcon.Visibility = Visibility.Collapsed;
-                            pauseIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA"));
-                    }
-                }
-            }
-                StatusText.Text = shouldPause ? "Playback paused" : "Playback resumed";
-            });
-            
+            UpdatePauseButtonIcons(shouldPause);
+            StatusText.Text = shouldPause ? "Playback paused" : "Playback resumed";
             Log.Information("Successfully toggled playback: {State}", shouldPause ? "Paused" : "Resumed");
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error toggling playback state");
-            await Dispatcher.InvokeAsync(() =>
-            {
             StatusText.Text = "Error toggling playback";
-            });
         }
         finally
         {
-            // Re-enable button after a short delay
             if (sender is Button btn)
             {
                 await Task.Delay(300);
@@ -2190,113 +738,62 @@ public partial class MainWindow : Window
 
     private async void ForwardButton_Click(object sender, RoutedEventArgs e)
     {
-        // Debounce rapid clicks
-        if ((DateTime.Now - _lastControlClick).TotalMilliseconds < CONTROL_CLICK_DEBOUNCE_MS)
+        if ((DateTime.Now - _lastControlClick).TotalMilliseconds < ControlClickDebounceMs)
             return;
         _lastControlClick = DateTime.Now;
 
-        if (driver == null || !IsMonitoring) return;
+        var core = _sessionService?.CoreWebView2;
+        if (core == null || !IsMonitoring)
+            return;
 
-        // Disable button temporarily
         if (sender is Button button)
-        {
             button.IsEnabled = false;
-        }
 
         try
         {
-            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
-            IWebElement? targetButton = null;
-
-            // Multiple strategies to find forward button
-            var strategies = new List<Func<IWebDriver, IWebElement?>>
-            {
-                // Strategy 1: aria-label
-                d => {
-                    try
-                    {
-                        return d.FindElement(By.CssSelector("button[aria-label*='next' i], button[aria-label*='forward' i], button[aria-label*='skip' i]"));
-                    }
-                    catch { return null; }
-                },
-                // Strategy 2: SVG path matching
-                d => {
-                    try
-                    {
-                        var path = d.FindElement(By.CssSelector("svg[viewBox='0 0 24 24'] path[d*='M16.757 4.626'], svg path[d*='M16.757']"));
-                        return path.FindElement(By.XPath("./ancestor::button"));
-                    }
-                    catch { return null; }
-                },
-                // Strategy 3: Find by data attributes or classes
-                d => {
-                    try
-                    {
-                        var buttons = d.FindElements(By.CssSelector("button[class*='forward'], button[class*='next'], button[class*='skip']"));
-                        return buttons.FirstOrDefault(b => b.Displayed && b.Enabled);
-                    }
-                    catch { return null; }
-                }
-            };
-
-            // Try each strategy with retries
-            for (int attempt = 0; attempt < 3; attempt++)
-            {
-                foreach (var strategy in strategies)
-                {
-                    try
-                    {
-                        targetButton = wait.Until(d =>
-                        {
-                            var element = strategy(d);
-                            if (element != null && element.Displayed && element.Enabled)
-                            {
-                                return element;
-                            }
-                            return null;
-                        });
-
-                        if (targetButton != null) break;
-                    }
-                    catch { }
-                }
-
-                if (targetButton != null) break;
-                await Task.Delay(300 * (attempt + 1));
-            }
-
-            if (targetButton == null)
-            {
-                await Dispatcher.InvokeAsync(() => StatusText.Text = "Could not find forward button");
-                Log.Warning("Could not find forward button after multiple attempts");
-                return;
-            }
-
-            // Scroll into view smoothly
-            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", targetButton);
-            await Task.Delay(100);
-
-            // Use JavaScript click for reliability
-            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", targetButton);
-
-            await Dispatcher.InvokeAsync(() =>
-            {
-                StatusText.Text = "Skipped to next track";
-            });
-
-            Log.Information("Successfully clicked forward button");
+            var success = await _playbackService.SkipForwardAsync(core);
+            StatusText.Text = success ? "Skipped to next track" : "Could not find forward button";
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error clicking forward button");
-            await Dispatcher.InvokeAsync(() =>
-            {
             StatusText.Text = "Error skipping track";
-            });
         }
         finally
         {
-            // Re-enable button
+            if (sender is Button btn)
+            {
+                await Task.Delay(300);
+                await Dispatcher.InvokeAsync(() => btn.IsEnabled = true);
+            }
+        }
+    }
+
+    private async void SkipBackButton_Click(object sender, RoutedEventArgs e)
+    {
+        if ((DateTime.Now - _lastControlClick).TotalMilliseconds < ControlClickDebounceMs)
+            return;
+        _lastControlClick = DateTime.Now;
+
+        var core = _sessionService?.CoreWebView2;
+        if (core == null || !IsMonitoring)
+            return;
+
+        if (sender is Button button)
+            button.IsEnabled = false;
+
+        try
+        {
+            var success = await _playbackService.SkipBackAsync(core);
+            StatusText.Text = success ? "Skipped to previous track" : "Could not find skip back button";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error clicking skip back button");
+            StatusText.Text = "Error skipping track";
+        }
+        finally
+        {
             if (sender is Button btn)
             {
                 await Task.Delay(300);
@@ -2307,222 +804,85 @@ public partial class MainWindow : Window
 
     private void PauseButton_MouseEnter(object sender, MouseEventArgs e)
     {
-        if (sender is Button button)
-        {
-            var pauseIcon = button.FindName("PauseIcon") as System.Windows.Shapes.Path;
-            var playIcon = button.FindName("PlayIcon") as System.Windows.Shapes.Path;
-            if (pauseIcon != null && playIcon != null)
-            {
-                var whiteBrush = new SolidColorBrush(Colors.White);
-                if (pauseIcon.Visibility == Visibility.Visible)
-                {
-                    pauseIcon.Fill = whiteBrush;
-                }
-                else
-                {
-                    playIcon.Fill = whiteBrush;
-                }
-            }
-        }
+        if (PauseIcon != null)
+            PauseIcon.Fill = Brushes.White;
+        if (PlayIcon != null && PlayIcon.Visibility == Visibility.Visible)
+            PlayIcon.Fill = Brushes.White;
     }
 
     private void PauseButton_MouseLeave(object sender, MouseEventArgs e)
     {
-        if (sender is Button button)
-        {
-            var pauseIcon = button.FindName("PauseIcon") as System.Windows.Shapes.Path;
-            var playIcon = button.FindName("PlayIcon") as System.Windows.Shapes.Path;
-            if (pauseIcon != null && playIcon != null)
-            {
-                var secondaryBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA"));
-                if (pauseIcon.Visibility == Visibility.Visible)
-                {
-                    pauseIcon.Fill = secondaryBrush;
-                }
-                else
-                {
-                    playIcon.Fill = secondaryBrush;
-                }
-            }
-        }
+        var fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA")!);
+        if (PauseIcon != null && PauseIcon.Visibility == Visibility.Visible)
+            PauseIcon.Fill = fill;
+        if (PlayIcon != null && PlayIcon.Visibility == Visibility.Visible)
+            PlayIcon.Fill = fill;
     }
 
     private void ForwardButton_MouseEnter(object sender, MouseEventArgs e)
     {
-        if (sender is Button button)
-        {
-            var forwardIcon = button.FindName("ForwardIcon") as System.Windows.Shapes.Path;
-            if (forwardIcon != null)
-            {
-                forwardIcon.Fill = new SolidColorBrush(Colors.White);
-            }
-        }
+        if (ForwardIcon != null)
+            ForwardIcon.Fill = Brushes.White;
     }
 
     private void ForwardButton_MouseLeave(object sender, MouseEventArgs e)
     {
-        if (sender is Button button)
-        {
-            var forwardIcon = button.FindName("ForwardIcon") as System.Windows.Shapes.Path;
-            if (forwardIcon != null)
-            {
-                forwardIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA"));
-            }
-        }
+        if (ForwardIcon != null)
+            ForwardIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA")!);
     }
 
     private void SkipBackButton_MouseEnter(object sender, MouseEventArgs e)
     {
-        if (sender is Button button)
-        {
-            var skipBackIcon = button.FindName("SkipBackIcon") as System.Windows.Shapes.Path;
-            if (skipBackIcon != null)
-            {
-                skipBackIcon.Fill = new SolidColorBrush(Colors.White);
-            }
-        }
+        if (SkipBackIcon != null)
+            SkipBackIcon.Fill = Brushes.White;
     }
 
     private void SkipBackButton_MouseLeave(object sender, MouseEventArgs e)
     {
-        if (sender is Button button)
+        if (SkipBackIcon != null)
+            SkipBackIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA")!);
+    }
+
+    private void UpdatePauseButtonIcons(bool shouldPause)
+    {
+        if (PauseIcon == null || PlayIcon == null)
+            return;
+
+        var fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA")!);
+        if (shouldPause)
         {
-            var skipBackIcon = button.FindName("SkipBackIcon") as System.Windows.Shapes.Path;
-            if (skipBackIcon != null)
-            {
-                skipBackIcon.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA"));
-            }
+            PauseIcon.Visibility = Visibility.Collapsed;
+            PlayIcon.Visibility = Visibility.Visible;
+            PlayIcon.Fill = fill;
+        }
+        else
+        {
+            PauseIcon.Visibility = Visibility.Visible;
+            PlayIcon.Visibility = Visibility.Collapsed;
+            PauseIcon.Fill = fill;
         }
     }
 
-    private async void SkipBackButton_Click(object sender, RoutedEventArgs e)
+    private void ResetPauseButtonIcons()
     {
-        // Debounce rapid clicks
-        if ((DateTime.Now - _lastControlClick).TotalMilliseconds < CONTROL_CLICK_DEBOUNCE_MS)
+        if (PauseIcon == null || PlayIcon == null)
             return;
-        _lastControlClick = DateTime.Now;
 
-        if (driver == null || !IsMonitoring) return;
-
-        // Disable button temporarily
-        if (sender is Button button)
-        {
-            button.IsEnabled = false;
-        }
-
-        try
-        {
-            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
-            IWebElement? targetButton = null;
-
-            // Multiple strategies to find skip back button
-            var strategies = new List<Func<IWebDriver, IWebElement?>>
-            {
-                // Strategy 1: aria-label
-                d => {
-                    try
-                    {
-                        return d.FindElement(By.CssSelector("button[aria-label*='previous' i], button[aria-label*='back' i], button[aria-label*='rewind' i]"));
-                    }
-                    catch { return null; }
-                },
-                // Strategy 2: SVG path matching
-                d => {
-                    try
-                    {
-                        var path = d.FindElement(By.CssSelector("svg[viewBox='0 0 24 24'] path[d*='M7.764 4.554'], svg path[d*='M7.764']"));
-                        return path.FindElement(By.XPath("./ancestor::button"));
-                    }
-                    catch { return null; }
-                },
-                // Strategy 3: Find by data attributes or classes
-                d => {
-                    try
-                    {
-                        var buttons = d.FindElements(By.CssSelector("button[class*='back'], button[class*='previous'], button[class*='rewind']"));
-                        return buttons.FirstOrDefault(b => b.Displayed && b.Enabled);
-                    }
-                    catch { return null; }
-                }
-            };
-
-            // Try each strategy with retries
-            for (int attempt = 0; attempt < 3; attempt++)
-            {
-                foreach (var strategy in strategies)
-                {
-                    try
-                    {
-                        targetButton = wait.Until(d =>
-                        {
-                            var element = strategy(d);
-                            if (element != null && element.Displayed && element.Enabled)
-                            {
-                                return element;
-                            }
-                            return null;
-                        });
-
-                        if (targetButton != null) break;
-                    }
-                    catch { }
-                }
-
-                if (targetButton != null) break;
-                await Task.Delay(300 * (attempt + 1));
-            }
-
-            if (targetButton == null)
-            {
-                await Dispatcher.InvokeAsync(() => StatusText.Text = "Could not find skip back button");
-                Log.Warning("Could not find skip back button after multiple attempts");
-                return;
-            }
-
-            // Scroll into view smoothly
-            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", targetButton);
-            await Task.Delay(100);
-
-            // Use JavaScript click for reliability
-            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", targetButton);
-
-            await Dispatcher.InvokeAsync(() =>
-            {
-                StatusText.Text = "Skipped to previous track";
-            });
-
-            Log.Information("Successfully clicked skip back button");
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error clicking skip back button");
-            await Dispatcher.InvokeAsync(() =>
-            {
-            StatusText.Text = "Error skipping track";
-            });
-        }
-        finally
-        {
-            // Re-enable button
-            if (sender is Button btn)
-            {
-                await Task.Delay(300);
-                await Dispatcher.InvokeAsync(() => btn.IsEnabled = true);
-            }
-        }
+        var fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A1A1AA")!);
+        PauseIcon.Visibility = Visibility.Visible;
+        PlayIcon.Visibility = Visibility.Collapsed;
+        PauseIcon.Fill = fill;
     }
 
     private async void ArtistInfoButton_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            if (sender is Button button && button.DataContext is Artist.ArtistEntry entry)
+            if (sender is Button button && button.DataContext is ArtistEntry entry)
             {
-                // Extract artist ID from the URL
                 var artistId = entry.ArtistStationUrl.Split('/').Last();
-                
-                // Read the bearer token from ArtistAuth.txt
-                string bearerToken = "";
+
+                string bearerToken;
                 if (File.Exists("Artist/ArtistAuth.txt"))
                 {
                     bearerToken = await File.ReadAllTextAsync("Artist/ArtistAuth.txt");
@@ -2533,39 +893,35 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                // Make the API call
-                using (var httpClient = new HttpClient())
+                using var httpClient = new HttpClient();
+                httpClient.DefaultRequestHeaders.Add("Authorization", bearerToken);
+                httpClient.DefaultRequestHeaders.Add("User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+
+                var response = await httpClient.GetAsync($"https://api.edge-gateway.siriusxm.com/page/v1/page/artist-station/{artistId}");
+                var responseBody = await response.Content.ReadAsStringAsync();
+
+                if (response.IsSuccessStatusCode)
                 {
-                    httpClient.DefaultRequestHeaders.Add("Authorization", bearerToken);
-                    httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-
-                    var response = await httpClient.GetAsync($"https://api.edge-gateway.siriusxm.com/page/v1/page/artist-station/{artistId}");
-                    var responseBody = await response.Content.ReadAsStringAsync();
-
-                    if (response.IsSuccessStatusCode)
+                    var jsonElement = JsonSerializer.Deserialize<JsonElement>(responseBody);
+                    var formattedJson = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions
                     {
-                        // Format the JSON response with proper indentation
-                        var jsonElement = JsonSerializer.Deserialize<JsonElement>(responseBody);
-                        var formattedJson = JsonSerializer.Serialize(jsonElement, new JsonSerializerOptions 
-                        { 
-                            WriteIndented = true 
-                        });
+                        WriteIndented = true
+                    });
 
-                        // Save the formatted JSON to ArtistInfo.json
-                        await File.WriteAllTextAsync("Artist/ArtistInfo.json", formattedJson);
-                        StatusText.Text = "Artist info saved successfully";
-                        Log.Information("Artist info saved to Artist/ArtistInfo.json");
+                    Directory.CreateDirectory("Artist");
+                    await File.WriteAllTextAsync("Artist/ArtistInfo.json", formattedJson);
+                    StatusText.Text = "Artist info saved successfully";
+                    Log.Information("Artist info saved to Artist/ArtistInfo.json");
 
-                        // Show the ArtistInfo window with the artist entry
-                        var artistInfoWindow = new Artist.Artistinfo(entry);
-                        artistInfoWindow.Owner = this;
-                        artistInfoWindow.Show();
-                    }
-                    else
-                    {
-                        StatusText.Text = "Failed to fetch artist info";
-                        Log.Error("Failed to fetch artist info. Status code: {StatusCode}", response.StatusCode);
-                    }
+                    var artistInfoWindow = new Artistinfo(entry);
+                    artistInfoWindow.Owner = this;
+                    artistInfoWindow.Show();
+                }
+                else
+                {
+                    StatusText.Text = "Failed to fetch artist info";
+                    Log.Error("Failed to fetch artist info. Status code: {StatusCode}", response.StatusCode);
                 }
             }
         }
@@ -2582,21 +938,18 @@ public partial class MainWindow : Window
         {
             var lyricsWindow = LyricsWindow.GetInstance();
             lyricsWindow.Owner = this;
-            
-            if (currentTrack != null)
+
+            if (_currentTrack != null)
             {
                 lyricsWindow.SetTrackInfo(
-                    currentTrack.TrackName ?? "Unknown Track",
-                    currentTrack.StationName ?? "Unknown Station",
-                    currentTrack.AlbumArtUrl
-                );
+                    _currentTrack.TrackName ?? "Unknown Track",
+                    _currentTrack.StationName ?? "Unknown Station",
+                    _currentTrack.AlbumArtUrl);
 
-                // Show loading state
                 lyricsWindow.SetLyrics("Fetching lyrics...");
                 lyricsWindow.Show();
                 lyricsWindow.Activate();
 
-                // Delete existing lyrics.txt if it exists
                 const string lyricsFilePath = "lyrics.txt";
                 if (File.Exists(lyricsFilePath))
                 {
@@ -2606,27 +959,15 @@ public partial class MainWindow : Window
                     }
                     catch (Exception ex)
                     {
-                        Log.Warning($"Could not delete existing lyrics.txt: {ex.Message}");
+                        Log.Warning("Could not delete existing lyrics.txt: {Message}", ex.Message);
                     }
                 }
 
-                // Construct the search query
-                string searchQuery = currentTrack.TrackName ?? "Unknown Track";
-                
-                // Try to extract artist name from track name (format: "Artist - Title")
-                string[] parts = searchQuery.Split(new[] { " - " }, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length >= 2)
-                {
-                    // If we have both artist and title, use them directly
-                    searchQuery = searchQuery; // Already in correct format
-                }
-                else
-                {
-                    // If we don't have the format, just use the track name
-                    searchQuery = currentTrack.TrackName ?? "Unknown Track";
-                }
+                var searchQuery = _currentTrack.TrackName ?? "Unknown Track";
+                var parts = searchQuery.Split(new[] { " - " }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 2)
+                    searchQuery = _currentTrack.TrackName ?? "Unknown Track";
 
-                // Run LyricsFetch.exe
                 var startInfo = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "LyricsFetch.exe",
@@ -2637,32 +978,27 @@ public partial class MainWindow : Window
                     CreateNoWindow = true
                 };
 
-                using (var process = new System.Diagnostics.Process { StartInfo = startInfo })
-                {
-                    process.Start();
-                    
-                    // Wait for lyrics.txt to be created
-                    int attempts = 0;
-                    const int maxAttempts = 30; // 30 seconds timeout
-                    
-                    while (!File.Exists(lyricsFilePath) && attempts < maxAttempts)
-                    {
-                        await Task.Delay(1000); // Wait 1 second between checks
-                        attempts++;
-                    }
+                using var process = new System.Diagnostics.Process { StartInfo = startInfo };
+                process.Start();
 
-                    if (File.Exists(lyricsFilePath))
-                    {
-                        // Wait a bit more to ensure file is completely written
-                        await Task.Delay(500);
-                        
-                        string lyrics = await File.ReadAllTextAsync(lyricsFilePath);
-                        lyricsWindow.SetLyrics(lyrics);
-                    }
-                    else
-                    {
-                        lyricsWindow.SetLyrics("No lyrics found (timeout waiting for lyrics.txt)");
-                    }
+                var attempts = 0;
+                const int maxAttempts = 30;
+
+                while (!File.Exists(lyricsFilePath) && attempts < maxAttempts)
+                {
+                    await Task.Delay(1000);
+                    attempts++;
+                }
+
+                if (File.Exists(lyricsFilePath))
+                {
+                    await Task.Delay(500);
+                    var lyrics = await File.ReadAllTextAsync(lyricsFilePath);
+                    lyricsWindow.SetLyrics(lyrics);
+                }
+                else
+                {
+                    lyricsWindow.SetLyrics("No lyrics found (timeout waiting for lyrics.txt)");
                 }
             }
             else
@@ -2683,9 +1019,7 @@ public partial class MainWindow : Window
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.LeftButton == MouseButtonState.Pressed)
-        {
             DragMove();
-        }
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)
@@ -2702,108 +1036,51 @@ public partial class MainWindow : Window
     {
         Close();
     }
-}
 
+    protected override async void OnClosed(EventArgs e)
+    {
+        _stationFeedbackWatcher?.Dispose();
+        _networkMonitor?.Stop();
 
-// Classes to deserialize Chrome performance logs
-public class PerformanceLogEntry
-{
-    [JsonPropertyName("message")]
-    public PerformanceMessage Message { get; set; }
-}
+        if (_sessionService != null)
+            await _sessionService.DisposeAsync();
 
-public class PerformanceMessage
-{
-    [JsonPropertyName("method")]
-    public string Method { get; set; }
+        await StopMonitoringAsync();
+        ClearSensitiveFiles();
 
-    [JsonPropertyName("params")]
-    public PerformanceParams Params { get; set; }
-}
+        Log.CloseAndFlush();
+        base.OnClosed(e);
+    }
 
-public class PerformanceParams
-{
-    [JsonPropertyName("response")]
-    public PerformanceResponse Response { get; set; }
-
-    [JsonPropertyName("requestId")]
-    public string RequestId { get; set; }
-
-    [JsonPropertyName("request")]
-    public PerformanceRequest Request { get; set; }
-}
-
-public class PerformanceRequest
-{
-    [JsonPropertyName("postData")]
-    public string PostData { get; set; }
-
-    [JsonPropertyName("headers")]
-    public Dictionary<string, string> Headers { get; set; }
-}
-
-public class PerformanceResponse
-{
-    [JsonPropertyName("url")]
-    public string Url { get; set; }
-
-    [JsonPropertyName("body")]
-    public string Body { get; set; }
-}
-
-public class StreamEntry
-{
-    public string Timestamp { get; set; }
-    public string StreamType { get; set; }
-    public string Url { get; set; }
-    public string TrackName { get; set; }
-    public string ArtistName { get; set; }
-    public string PreferredImageUrl { get; set; }
-    public bool CanPlay => StreamType == "mp4" || StreamType == "mp3" || StreamType == "m3u8";
-
-    public static string DecodeImageUrl(string imagePath)
+    private void ClearSensitiveFiles()
     {
         try
         {
-            var jsonObject = new
-            {
-                key = imagePath,
-                edits = new object[]
-                {
-                    new
-                    {
-                        format = new
-                        {
-                            type = "jpeg"
-                        }
-                    },
-                    new
-                    {
-                        resize = new
-                        {
-                            width = 1080,
-                            height = 1080
-                        }
-                    }
-                }
-            };
-
-            string jsonString = JsonSerializer.Serialize(jsonObject);
-            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(jsonString);
-            string base64String = Convert.ToBase64String(bytes);
-            return "https://imgsrv-sxm-prod-device.streaming.siriusxm.com/" + base64String;
+            ClearFileContents(IOPath.Combine("Login", "authorization Bearer.txt"));
+            ClearFileContents(IOPath.Combine("Artist", "ArtistAuth.txt"));
+            ClearFileContents(IOPath.Combine("HLSKey", "authorization Bearer.txt"));
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Error decoding image URL for path: {Path}", imagePath);
-            return null;
+            Log.Debug(ex, "ClearSensitiveFiles encountered an error");
         }
     }
-}
 
-public class NowPlaying
-{
-    public string TrackName { get; set; }
-    public string StationName { get; set; }
-    public string AlbumArtUrl { get; set; }
+    private static void ClearFileContents(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.WriteAllText(path, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Failed to clear {Path}", path);
+        }
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
 }

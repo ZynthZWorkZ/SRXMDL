@@ -1,21 +1,19 @@
-using OpenQA.Selenium;
-using OpenQA.Selenium.Chrome;
+using System.IO;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using Microsoft.Web.WebView2.Core;
 using Serilog;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
-using System.IO;
 
 namespace SRXMDL.Artist;
 
 public class ArtistStations
 {
     private readonly ObservableCollection<ArtistEntry> _artistEntries;
-    private readonly ChromeDriver? _driver;
+    private readonly Func<CoreWebView2?> _getCoreWebView;
     private readonly Dispatcher _dispatcher;
     private readonly string _favoritesFile = "Artist/favorites.json";
     private bool _isMonitoring;
@@ -26,20 +24,17 @@ public class ArtistStations
         private set
         {
             _isMonitoring = value;
-            // Update CanPlay for all artist entries
             foreach (var entry in _artistEntries)
-            {
                 entry.CanPlay = value;
-            }
             ArtistListView?.Items.Refresh();
         }
     }
 
     public ListView? ArtistListView { get; set; }
 
-    public ArtistStations(ChromeDriver? driver, Dispatcher dispatcher, ObservableCollection<ArtistEntry> artistEntries)
+    public ArtistStations(Func<CoreWebView2?> getCoreWebView, Dispatcher dispatcher, ObservableCollection<ArtistEntry> artistEntries)
     {
-        _driver = driver;
+        _getCoreWebView = getCoreWebView;
         _dispatcher = dispatcher;
         _artistEntries = artistEntries;
         LoadFavorites();
@@ -49,21 +44,17 @@ public class ArtistStations
     {
         try
         {
-            // Ensure the Artist directory exists
             Directory.CreateDirectory("Artist");
-            
-            if (File.Exists(_favoritesFile))
+            if (!File.Exists(_favoritesFile)) return;
+
+            var favorites = JsonSerializer.Deserialize<List<ArtistEntry>>(File.ReadAllText(_favoritesFile));
+            if (favorites == null) return;
+
+            foreach (var favorite in favorites)
             {
-                var favorites = JsonSerializer.Deserialize<List<ArtistEntry>>(File.ReadAllText(_favoritesFile));
-                if (favorites != null)
-                {
-                    foreach (var favorite in favorites)
-                    {
-                        favorite.IsFavorite = true;
-                        favorite.CanPlay = IsMonitoring;
-                        _artistEntries.Add(favorite);
-                    }
-                }
+                favorite.IsFavorite = true;
+                favorite.CanPlay = IsMonitoring;
+                _artistEntries.Add(favorite);
             }
         }
         catch (Exception ex)
@@ -76,16 +67,13 @@ public class ArtistStations
     {
         try
         {
-            // Ensure the Artist directory exists
             Directory.CreateDirectory("Artist");
-            
-            // Get unique favorites by URL to prevent duplicates
             var favorites = _artistEntries
                 .Where(a => a.IsFavorite)
                 .GroupBy(a => a.ArtistStationUrl)
                 .Select(g => g.First())
                 .ToList();
-                
+
             var json = JsonSerializer.Serialize(favorites, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(_favoritesFile, json);
         }
@@ -106,13 +94,13 @@ public class ArtistStations
     {
         if (isFavorite)
         {
-            button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B")); // Yellow
+            button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B"));
             button.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B"));
             button.Content = "★ Favorited";
         }
         else
         {
-            button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#374151")); // Default
+            button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#374151"));
             button.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#374151"));
             button.Content = "☆ Favorite";
         }
@@ -120,60 +108,56 @@ public class ArtistStations
 
     public async Task ProcessArtistStationUrl(string url)
     {
+        var core = _getCoreWebView();
+        if (core == null) return;
+
         try
         {
-            if (_driver != null)
+            if (!string.Equals(core.Source, url, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            const string script = """
+                (function() {
+                    var title = document.querySelector("span[data-qa='content-page-title']");
+                    var thumb = document.querySelector("span.image-module__image-inner___rZWHj img.image-module__image-image___WKoaX");
+                    return JSON.stringify({
+                        artist: title ? title.textContent.trim() : '',
+                        thumbnail: thumb ? thumb.src : ''
+                    });
+                })();
+                """;
+
+            for (var attempt = 0; attempt < 5; attempt++)
             {
-                try
+                var raw = await core.ExecuteScriptAsync(script);
+                var json = JsonSerializer.Deserialize<string>(raw);
+                if (string.IsNullOrWhiteSpace(json)) { await Task.Delay(500); continue; }
+
+                var doc = JsonSerializer.Deserialize<JsonElement>(json);
+                var artistName = doc.TryGetProperty("artist", out var a) ? a.GetString()?.Trim() : null;
+                if (string.IsNullOrWhiteSpace(artistName)) { await Task.Delay(500); continue; }
+
+                var thumbnailUrl = doc.TryGetProperty("thumbnail", out var t) ? t.GetString() ?? "" : "";
+
+                var existingArtist = _artistEntries.FirstOrDefault(x =>
+                    x.ArtistStationUrl == url ||
+                    x.Artist.Equals(artistName, StringComparison.OrdinalIgnoreCase));
+
+                if (existingArtist == null)
                 {
-                    var wait = new OpenQA.Selenium.Support.UI.WebDriverWait(_driver, TimeSpan.FromSeconds(10));
-                    var titleElement = wait.Until(d => d.FindElement(By.CssSelector("span[data-qa='content-page-title']")));
-                    
-                    var artistName = titleElement.Text.Trim();
-                    
-                    string thumbnailUrl = "";
-                    try
+                    await _dispatcher.InvokeAsync(() =>
                     {
-                        var thumbnailElement = _driver.FindElement(By.CssSelector("span.image-module__image-inner___rZWHj img.image-module__image-image___WKoaX"));
-                        thumbnailUrl = thumbnailElement.GetAttribute("src");
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warning(ex, "Could not find thumbnail image for artist: {Artist}", artistName);
-                    }
-                    
-                    // Check for existing artist by both URL and name to prevent duplicates
-                    var existingArtist = _artistEntries.FirstOrDefault(a => 
-                        a.ArtistStationUrl == url || 
-                        a.Artist.Equals(artistName, StringComparison.OrdinalIgnoreCase));
-                        
-                    if (existingArtist == null)
-                    {
-                        await _dispatcher.InvokeAsync(() =>
+                        _artistEntries.Add(new ArtistEntry
                         {
-                            _artistEntries.Add(new ArtistEntry
-                            {
-                                Artist = artistName,
-                                ArtistStationUrl = url,
-                                ThumbnailUrl = thumbnailUrl,
-                                CanPlay = IsMonitoring
-                            });
+                            Artist = artistName,
+                            ArtistStationUrl = url,
+                            ThumbnailUrl = thumbnailUrl,
+                            CanPlay = IsMonitoring
                         });
-                        Log.Information("Artist station detected: {Artist} - {Url} - Thumbnail: {Thumbnail}", artistName, url, thumbnailUrl);
-                    }
-                    else
-                    {
-                        Log.Information("Duplicate artist station skipped: {Artist} - {Url}", artistName, url);
-                    }
+                    });
+                    Log.Information("Artist station detected: {Artist} - {Url}", artistName, url);
                 }
-                catch (OpenQA.Selenium.WebDriverTimeoutException)
-                {
-                    Log.Warning("Timeout waiting for artist title element on page: {Url}", url);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "Error finding artist title element on page: {Url}", url);
-                }
+                return;
             }
         }
         catch (Exception ex)
@@ -184,24 +168,20 @@ public class ArtistStations
 
     public async Task PlayArtistStation(ArtistEntry entry, Action<string> updateStatus)
     {
+        var core = _getCoreWebView();
+        if (core == null)
+        {
+            updateStatus("Browser not initialized");
+            return;
+        }
+
         try
         {
-            if (_driver != null)
-            {
-                if (_driver.Url == entry.ArtistStationUrl)
-                {
-                    await ClickPlayButton(entry.Artist, updateStatus);
-                    return;
-                }
+            if (!string.Equals(core.Source, entry.ArtistStationUrl, StringComparison.OrdinalIgnoreCase))
+                core.Navigate(entry.ArtistStationUrl);
 
-                _driver.Navigate().GoToUrl(entry.ArtistStationUrl);
-                await ClickPlayButton(entry.Artist, updateStatus);
-            }
-            else
-            {
-                updateStatus("Browser not initialized");
-                Log.Warning("Attempted to play artist station but browser was not initialized");
-            }
+            await Task.Delay(1500);
+            await ClickPlayButtonAsync(core, entry.Artist, updateStatus);
         }
         catch (Exception ex)
         {
@@ -210,46 +190,46 @@ public class ArtistStations
         }
     }
 
-    private async Task ClickPlayButton(string artistName, Action<string> updateStatus)
+    private static async Task ClickPlayButtonAsync(CoreWebView2 core, string artistName, Action<string> updateStatus)
     {
-        try
+        var script = $$"""
+            (function() {
+                function click(btn) {
+                    if (!btn) return false;
+                    btn.scrollIntoView({ block: 'center' });
+                    btn.click();
+                    return true;
+                }
+                var specific = document.querySelector("button[aria-label='Play {{artistName.Replace("'", "\\'")}} Station']");
+                if (click(specific)) return true;
+                var generic = document.querySelector("button[aria-label*='Play']");
+                return click(generic);
+            })();
+            """;
+
+        for (var i = 0; i < 5; i++)
         {
-            var wait = new OpenQA.Selenium.Support.UI.WebDriverWait(_driver, TimeSpan.FromSeconds(5));
-            
-            try
+            var result = await core.ExecuteScriptAsync(script);
+            if (result == "true")
             {
-                var playButton = wait.Until(d => d.FindElement(By.CssSelector($"button[aria-label='Play {artistName} Station']")));
-                ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].scrollIntoView(true);", playButton);
-                playButton.Click();
+                updateStatus($"Playing {artistName} station...");
+                Log.Information("Started playing artist station: {Artist}", artistName);
+                return;
             }
-            catch (OpenQA.Selenium.WebDriverTimeoutException)
-            {
-                Log.Warning("Specific play button not found for {Artist}, trying generic play button", artistName);
-                var playButton = wait.Until(d => d.FindElement(By.CssSelector("button[aria-label*='Play']")));
-                ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].scrollIntoView(true);", playButton);
-                playButton.Click();
-            }
-            
-            updateStatus($"Playing {artistName} station...");
-            Log.Information("Started playing artist station: {Artist}", artistName);
+            await Task.Delay(600);
         }
-        catch (Exception ex)
-        {
-            throw new Exception($"Failed to click play button: {ex.Message}", ex);
-        }
+
+        throw new InvalidOperationException("Could not find artist play button");
     }
 
-    public void SetMonitoringStatus(bool isActive)
-    {
-        IsMonitoring = isActive;
-    }
+    public void SetMonitoringStatus(bool isActive) => IsMonitoring = isActive;
 }
 
 public class ArtistEntry
 {
-    public string Artist { get; set; }
-    public string ArtistStationUrl { get; set; }
-    public string ThumbnailUrl { get; set; }
+    public string Artist { get; set; } = string.Empty;
+    public string ArtistStationUrl { get; set; } = string.Empty;
+    public string ThumbnailUrl { get; set; } = string.Empty;
     public bool IsFavorite { get; set; }
     public bool CanPlay { get; set; }
 }

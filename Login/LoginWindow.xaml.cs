@@ -33,12 +33,10 @@ namespace SRXMDL.Login
 
             var ok = CredentialStore.Save(email, password);
             StatusText.Text = ok
-                ? "Saved. Password is encrypted with your Windows account."
+                ? "Saved. Auto sign-in will run when monitoring starts."
                 : "Could not save credentials.";
             if (ok)
-            {
                 PasswordBox.Password = string.Empty;
-            }
         }
 
         private void Reset_Click(object sender, RoutedEventArgs e)
@@ -46,7 +44,7 @@ namespace SRXMDL.Login
             CredentialStore.Clear();
             EmailBox.Text = string.Empty;
             PasswordBox.Password = string.Empty;
-            StatusText.Text = "Credentials cleared. Enter new email and password to save.";
+            StatusText.Text = "Credentials cleared.";
         }
 
         private void Close_Click(object sender, RoutedEventArgs e)
@@ -55,4 +53,3 @@ namespace SRXMDL.Login
         }
     }
 }
-

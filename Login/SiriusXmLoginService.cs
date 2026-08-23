@@ -213,27 +213,24 @@ namespace SRXMDL.Login
         public string ExportCookiesNetscapeFormat()
         {
             CaptureFromContainer();
-            var sb = new StringBuilder();
-            sb.AppendLine("# Netscape HTTP Cookie File");
-            sb.AppendLine();
-            var unique = _cookies
+            return CookieFileHelper.ToNetscapeFormat(ExportCookieEntries());
+        }
+
+        public IEnumerable<CookieExportEntry> ExportCookieEntries()
+        {
+            CaptureFromContainer();
+            return _cookies
                 .GroupBy(c => new { c.Domain, c.Path, c.Name })
                 .Select(g => g.First())
-                .OrderBy(c => c.Domain).ThenBy(c => c.Path).ThenBy(c => c.Name);
-
-            foreach (var c in unique)
-            {
-                var domainFlag = c.Domain.StartsWith(".") ? "TRUE" : "FALSE";
-                var secureFlag = c.Secure ? "TRUE" : "FALSE";
-                var exp = 0L;
-                if (c.Expires.HasValue)
+                .Select(c => new CookieExportEntry
                 {
-                    var epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-                    exp = (long)(c.Expires.Value.ToUniversalTime() - epoch).TotalSeconds;
-                }
-                sb.AppendLine($"{c.Domain}\t{domainFlag}\t{c.Path}\t{secureFlag}\t{exp}\t{c.Name}\t{c.Value}");
-            }
-            return sb.ToString();
+                    Domain = c.Domain.StartsWith('.') ? c.Domain : "." + c.Domain.TrimStart('.'),
+                    Path = string.IsNullOrWhiteSpace(c.Path) ? "/" : c.Path,
+                    Name = c.Name,
+                    Value = c.Value,
+                    Expires = c.Expires,
+                    IsSecure = c.Secure
+                });
         }
 
         private void CaptureFromContainer()

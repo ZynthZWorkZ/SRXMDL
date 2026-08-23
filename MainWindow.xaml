@@ -4,116 +4,107 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SRXMDL"
+        xmlns:converters="clr-namespace:SRXMDL.Converters"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
         Title="SiriusXM Monitor" 
-        Height="800"
-        Width="1250"
+        Height="920"
+        Width="1600"
         Background="Transparent"
         AllowsTransparency="True"
         WindowStyle="None"
         ResizeMode="CanResize"
-        MinHeight="650"
-        MinWidth="1050"
+        MinHeight="700"
+        MinWidth="1280"
         Loaded="Window_Loaded"
         SizeChanged="Window_SizeChanged"
         MouseLeftButtonDown="Window_MouseLeftButtonDown">
     
     <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
-        
-        <!-- Enhanced Animations -->
-        <Storyboard x:Key="StatusPulse" RepeatBehavior="Forever">
-            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0.4" Duration="0:0:1.2" AutoReverse="True">
-                <DoubleAnimation.EasingFunction>
-                    <CubicEase EasingMode="EaseInOut"/>
-                </DoubleAnimation.EasingFunction>
-            </DoubleAnimation>
-        </Storyboard>
-        
+        <converters:InverseBooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+
+        <!-- Animations -->
         <Storyboard x:Key="BlinkAnimation" RepeatBehavior="Forever">
-            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0.4" Duration="0:0:1" AutoReverse="True">
+            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0.35" Duration="0:0:1" AutoReverse="True">
                 <DoubleAnimation.EasingFunction>
                     <CubicEase EasingMode="EaseInOut"/>
                 </DoubleAnimation.EasingFunction>
             </DoubleAnimation>
         </Storyboard>
-        
-        <Storyboard x:Key="GlowAnimation" RepeatBehavior="Forever">
-            <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)" 
-                           From="8" To="20" Duration="0:0:2" AutoReverse="True">
-                <DoubleAnimation.EasingFunction>
-                    <SineEase EasingMode="EaseInOut"/>
-                </DoubleAnimation.EasingFunction>
-            </DoubleAnimation>
-        </Storyboard>
 
-        <!-- Premium Color Palette -->
-        <SolidColorBrush x:Key="DarkGradient" Color="#0B0C12"/>
-        <SolidColorBrush x:Key="CardGradient" Color="#11131A"/>
-        <SolidColorBrush x:Key="AccentGradient" Color="#2563EB"/>
-        <SolidColorBrush x:Key="PurpleGradient" Color="#312E81"/>
-        
-        <SolidColorBrush x:Key="NeonCyan" Color="#00FFFF"/>
-        <SolidColorBrush x:Key="NeonPink" Color="#FF1493"/>
-        <SolidColorBrush x:Key="NeonGreen" Color="#39FF14"/>
-        <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF"/>
-        <SolidColorBrush x:Key="TextSecondary" Color="#B8BCC8"/>
-        <SolidColorBrush x:Key="TextMuted" Color="#6C7293"/>
+        <!-- ================= Palette: Modern Black + SiriusXM Blue ================= -->
+        <SolidColorBrush x:Key="WindowBg" Color="#06070A"/>
+        <SolidColorBrush x:Key="Surface" Color="#111318"/>
+        <SolidColorBrush x:Key="SurfaceRaised" Color="#17191F"/>
+        <SolidColorBrush x:Key="BorderSubtle" Color="#232631"/>
 
-        <!-- Glassmorphism Card Style -->
+        <SolidColorBrush x:Key="TextPrimary" Color="#F5F6F8"/>
+        <SolidColorBrush x:Key="TextSecondary" Color="#98A0B3"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#5A6072"/>
+
+        <SolidColorBrush x:Key="AccentBlue" Color="#0A84FF"/>
+        <SolidColorBrush x:Key="AccentBlueDeep" Color="#0B4C8C"/>
+        <SolidColorBrush x:Key="AccentBlueSoft" Color="#15294A"/>
+        <SolidColorBrush x:Key="AccentGreen" Color="#30D158"/>
+        <SolidColorBrush x:Key="AccentRed" Color="#FF453A"/>
+        <SolidColorBrush x:Key="AccentAmber" Color="#FFD60A"/>
+
+        <LinearGradientBrush x:Key="CardGradient" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#151822" Offset="0"/>
+            <GradientStop Color="#0F1116" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Card container -->
         <Style x:Key="GlassCard" TargetType="Border">
-            <Setter Property="Background" Value="#121420"/>
-            <Setter Property="CornerRadius" Value="20"/>
+            <Setter Property="Background" Value="{StaticResource Surface}"/>
+            <Setter Property="CornerRadius" Value="18"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#1F2230"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderSubtle}"/>
             <Setter Property="Effect">
                 <Setter.Value>
-                    <DropShadowEffect Color="#000000" Opacity="0.35" BlurRadius="20" ShadowDepth="4"/>
+                    <DropShadowEffect Color="#000000" Opacity="0.45" BlurRadius="26" ShadowDepth="8"/>
                 </Setter.Value>
             </Setter>
         </Style>
-        
-        <!-- Neon Button Style -->
-        <Style x:Key="NeonButton" TargetType="Button">
+
+        <!-- Outline / secondary pill button (flat, Apple-style — no neon glow) -->
+        <Style x:Key="OutlineButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
-            <Setter Property="BorderThickness" Value="2"/>
-            <Setter Property="BorderBrush" Value="{StaticResource NeonCyan}"/>
-            <Setter Property="Padding" Value="20,12"/>
-            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="BorderThickness" Value="1.4"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderSubtle}"/>
+            <Setter Property="Padding" Value="18,10"/>
+            <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="25"
+                                CornerRadius="22"
                                 Padding="{TemplateBinding Padding}">
-                            <Border.Effect>
-                                <DropShadowEffect Color="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=BorderBrush.(SolidColorBrush.Color)}" 
-                                                Opacity="0.6" BlurRadius="15" ShadowDepth="0"/>
-                            </Border.Effect>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background">
+                                <Setter TargetName="Root" Property="Background">
                                     <Setter.Value>
-                                        <SolidColorBrush Color="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=BorderBrush.(SolidColorBrush.Color)}" Opacity="0.1"/>
+                                        <SolidColorBrush Color="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=BorderBrush.(SolidColorBrush.Color)}" Opacity="0.14"/>
                                     </Setter.Value>
                                 </Setter>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Background">
+                                <Setter TargetName="Root" Property="Background">
                                     <Setter.Value>
-                                        <SolidColorBrush Color="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=BorderBrush.(SolidColorBrush.Color)}" Opacity="0.2"/>
+                                        <SolidColorBrush Color="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=BorderBrush.(SolidColorBrush.Color)}" Opacity="0.24"/>
                                     </Setter.Value>
                                 </Setter>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.5"/>
+                                <Setter Property="Opacity" Value="0.4"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -121,39 +112,33 @@
             </Setter>
         </Style>
 
-        <!-- Gradient Action Button -->
-        <Style x:Key="GradientButton" TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource PurpleGradient}"/>
+        <!-- Primary solid pill button -->
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource AccentBlue}"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="16,10"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Padding" Value="20,11"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                CornerRadius="15"
-                                Padding="{TemplateBinding Padding}">
+                        <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="22" Padding="{TemplateBinding Padding}">
                             <Border.Effect>
-                                <DropShadowEffect Color="#667EEA" Opacity="0.4" BlurRadius="12" ShadowDepth="0"/>
+                                <DropShadowEffect Color="#0A84FF" Opacity="0.35" BlurRadius="16" ShadowDepth="0"/>
                             </Border.Effect>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background">
-                                    <Setter.Value>
-                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                            <GradientStop Color="#7C8EF7" Offset="0"/>
-                                            <GradientStop Color="#8B5BAF" Offset="1"/>
-                                        </LinearGradientBrush>
-                                    </Setter.Value>
-                                </Setter>
+                                <Setter TargetName="Root" Property="Background" Value="#2A96FF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#0868CC"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.5"/>
+                                <Setter Property="Opacity" Value="0.4"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -161,7 +146,61 @@
             </Setter>
         </Style>
 
-        <!-- Modern ListView -->
+        <!-- Small icon action button (row actions) -->
+        <Style x:Key="AccentIconButton" TargetType="Button">
+            <Setter Property="Background" Value="#171B26"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderSubtle}"/>
+            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="12"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#1E2433"/>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AccentBlue}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Segmented tab button -->
+        <Style x:Key="SegmentedTabButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="16,7"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="16" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Modern ListView (transparent, custom scroll) -->
         <Style x:Key="ModernListView" TargetType="ListView">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -178,43 +217,24 @@
             </Setter>
         </Style>
 
-        <!-- Futuristic ListViewItem -->
-        <Style x:Key="FuturisticListViewItem" TargetType="ListViewItem">
+        <!-- List row -->
+        <Style x:Key="ListRowItemStyle" TargetType="ListViewItem">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Padding" Value="15,12"/>
+            <Setter Property="Padding" Value="12,10"/>
             <Setter Property="Margin" Value="0,2"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListViewItem">
-                        <Border Background="{TemplateBinding Background}"
-                                CornerRadius="12"
-                                Padding="{TemplateBinding Padding}">
-                            <Border.Effect>
-                                <DropShadowEffect Color="#000000" Opacity="0.1" BlurRadius="8" ShadowDepth="2"/>
-                            </Border.Effect>
+                        <Border Background="{TemplateBinding Background}" CornerRadius="10" Padding="{TemplateBinding Padding}">
                             <GridViewRowPresenter VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background">
-                                    <Setter.Value>
-                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0" Opacity="0.1">
-                                            <GradientStop Color="#00FFFF" Offset="0"/>
-                                            <GradientStop Color="#FF1493" Offset="1"/>
-                                        </LinearGradientBrush>
-                                    </Setter.Value>
-                                </Setter>
+                                <Setter Property="Background" Value="#141826"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background">
-                                    <Setter.Value>
-                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0" Opacity="0.2">
-                                            <GradientStop Color="#667EEA" Offset="0"/>
-                                            <GradientStop Color="#764BA2" Offset="1"/>
-                                        </LinearGradientBrush>
-                                    </Setter.Value>
-                                </Setter>
+                                <Setter Property="Background" Value="{StaticResource AccentBlueSoft}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -222,67 +242,54 @@
             </Setter>
         </Style>
 
-        <!-- Futuristic GridViewColumnHeader -->
-        <Style x:Key="FuturisticGridViewColumnHeader" TargetType="GridViewColumnHeader">
+        <!-- List column header -->
+        <Style x:Key="ListColumnHeaderStyle" TargetType="GridViewColumnHeader">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{StaticResource NeonCyan}"/>
-            <Setter Property="Padding" Value="15,15"/>
+            <Setter Property="Foreground" Value="{StaticResource AccentBlue}"/>
+            <Setter Property="Padding" Value="12,10"/>
             <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontSize" Value="11"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="GridViewColumnHeader">
-                        <Border Background="{TemplateBinding Background}"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                            VerticalAlignment="Center"/>
+                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <!-- Neon Status Indicator -->
-        <Style x:Key="NeonStatusIndicator" TargetType="Ellipse">
-            <Setter Property="Width" Value="12"/>
-            <Setter Property="Height" Value="12"/>
-            <Setter Property="Fill" Value="{StaticResource NeonGreen}"/>
+        <!-- Status dot -->
+        <Style x:Key="StatusDot" TargetType="Ellipse">
+            <Setter Property="Width" Value="11"/>
+            <Setter Property="Height" Value="11"/>
+            <Setter Property="Fill" Value="{StaticResource AccentGreen}"/>
             <Setter Property="Effect">
                 <Setter.Value>
-                    <DropShadowEffect Color="#39FF14" Opacity="0.8" BlurRadius="8" ShadowDepth="0"/>
+                    <DropShadowEffect Color="#30D158" Opacity="0.7" BlurRadius="8" ShadowDepth="0"/>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <!-- Icon Button Style -->
+        <!-- Round icon button (playback / row controls) -->
         <Style x:Key="IconButtonStyle" TargetType="Button">
-            <Setter Property="Width" Value="50"/>
-            <Setter Property="Height" Value="50"/>
+            <Setter Property="Width" Value="42"/>
+            <Setter Property="Height" Value="42"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="FontSize" Value="20"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Grid>
-                            <ContentPresenter/>
-                            <Border x:Name="GlowBorder" 
-                                    Background="Transparent" 
-                                    CornerRadius="25"
-                                    Opacity="0">
-                                <Border.Effect>
-                                    <DropShadowEffect Color="#00FFFF" 
-                                                    Opacity="0.8" 
-                                                    BlurRadius="15" 
-                                                    ShadowDepth="0"/>
-                                </Border.Effect>
-                            </Border>
-                        </Grid>
+                        <Border x:Name="HoverBg" Background="Transparent" CornerRadius="21">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="GlowBorder" Property="Opacity" Value="1"/>
+                                <Setter TargetName="HoverBg" Property="Background" Value="#171B26"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -290,71 +297,47 @@
             </Setter>
         </Style>
 
-        <!-- Play Button Style -->
         <Style x:Key="PlayButtonStyle" TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
-            <Setter Property="Foreground" Value="#39FF14"/>
+            <Setter Property="Foreground" Value="{StaticResource AccentGreen}"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Grid>
-                            <ContentPresenter/>
-                            <Border x:Name="GlowBorder" 
-                                    Background="Transparent" 
-                                    CornerRadius="25"
-                                    Opacity="0">
-                                <Border.Effect>
-                                    <DropShadowEffect Color="#39FF14" 
-                                                    Opacity="0.8" 
-                                                    BlurRadius="15" 
-                                                    ShadowDepth="0"/>
-                                </Border.Effect>
-                            </Border>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="GlowBorder" Property="Opacity" Value="1"/>
-                                <Setter Property="Foreground" Value="#00FF00"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Foreground" Value="#4B4B4B"/>
-                                <Setter Property="Opacity" Value="0.5"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#4BE374"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Foreground" Value="#3A3F4A"/>
+                    <Setter Property="Opacity" Value="0.5"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
-        <!-- Favorite Button Style -->
         <Style x:Key="FavoriteButtonStyle" TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
-            <Setter Property="Foreground" Value="#FF1493"/>
+            <Setter Property="Foreground" Value="{StaticResource AccentAmber}"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Foreground" Value="#FF69B4"/>
+                    <Setter Property="Foreground" Value="#FFE066"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
 
-        <!-- Info Button Style -->
         <Style x:Key="InfoButtonStyle" TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
-            <Setter Property="Foreground" Value="#667EEA"/>
+            <Setter Property="Foreground" Value="{StaticResource AccentBlue}"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Foreground" Value="#7C8EF7"/>
+                    <Setter Property="Foreground" Value="#3FA0FF"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
 
-        <!-- Title Bar Button Styles -->
+        <!-- Title Bar Buttons -->
         <Style x:Key="TitleBarButton" TargetType="Button">
             <Setter Property="Width" Value="32"/>
             <Setter Property="Height" Value="24"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="#E5E7EB"/>
+            <Setter Property="Foreground" Value="#C7CBD6"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="#1F2937"/>
+            <Setter Property="BorderBrush" Value="#1F2230"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
@@ -365,12 +348,11 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#191C2A"/>
-                                <Setter TargetName="Root" Property="BorderBrush" Value="#2E3548"/>
+                                <Setter TargetName="Root" Property="Background" Value="#171B26"/>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AccentBlue}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#131522"/>
-                                <Setter TargetName="Root" Property="BorderBrush" Value="#252B3B"/>
+                                <Setter TargetName="Root" Property="Background" Value="#12141C"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Root" Property="Opacity" Value="0.5"/>
@@ -393,11 +375,10 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Root" Property="Background" Value="#31141A"/>
-                                <Setter TargetName="Root" Property="BorderBrush" Value="#B91C1C"/>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AccentRed}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Root" Property="Background" Value="#240E13"/>
-                                <Setter TargetName="Root" Property="BorderBrush" Value="#991B1B"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -407,8 +388,8 @@
 
         <!-- Dark ScrollBar -->
         <Style TargetType="ScrollBar">
-            <Setter Property="Background" Value="#11131A"/>
-            <Setter Property="Width" Value="10"/>
+            <Setter Property="Background" Value="{StaticResource Surface}"/>
+            <Setter Property="Width" Value="8"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollBar">
@@ -427,8 +408,8 @@
                                         <Thumb.Template>
                                             <ControlTemplate TargetType="Thumb">
                                                 <Border x:Name="ThumbRoot"
-                                                        Background="#2F80ED"
-                                                        CornerRadius="5"/>
+                                                        Background="{StaticResource AccentBlueDeep}"
+                                                        CornerRadius="4"/>
                                             </ControlTemplate>
                                         </Thumb.Template>
                                     </Thumb>
@@ -442,7 +423,7 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="Orientation" Value="Horizontal">
-                                <Setter Property="Height" Value="10"/>
+                                <Setter Property="Height" Value="8"/>
                                 <Setter Property="Width" Value="Auto"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -452,593 +433,528 @@
         </Style>
     </Window.Resources>
 
-    <Grid x:Name="LayoutRoot">
-        <Grid.LayoutTransform>
-            <ScaleTransform x:Name="RootScale" ScaleX="0.85" ScaleY="0.85"/>
-        </Grid.LayoutTransform>
-        <Grid.Background>
-            <SolidColorBrush Color="#0B0C12"/>
-        </Grid.Background>
-        
-        <!-- Animated Background Elements -->
-        <Canvas>
-            <Ellipse Width="200" Height="200" Canvas.Left="100" Canvas.Top="50" Opacity="0.04" Fill="#111827"/>
-            <Ellipse Width="150" Height="150" Canvas.Right="80" Canvas.Bottom="100" Opacity="0.06" Fill="#141927"/>
-        </Canvas>
+    <Border Background="{StaticResource WindowBg}" CornerRadius="18" BorderBrush="#1A1C26" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" Opacity="0.55" BlurRadius="30" ShadowDepth="8"/>
+        </Border.Effect>
+        <Grid x:Name="LayoutRoot" ClipToBounds="True">
+            <Grid.LayoutTransform>
+                <ScaleTransform x:Name="RootScale" ScaleX="1" ScaleY="1"/>
+            </Grid.LayoutTransform>
 
-        <Grid Margin="12">
-        <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition x:Name="LeftColumn" Width="*"/>
-            <ColumnDefinition x:Name="RightColumn" Width="*"/>
-        </Grid.ColumnDefinitions>
+            <!-- Ambient background glow -->
+            <Canvas ClipToBounds="True">
+                <Ellipse Width="420" Height="420" Canvas.Left="-100" Canvas.Top="-140" Opacity="0.10" Fill="{StaticResource AccentBlueDeep}"/>
+                <Ellipse Width="320" Height="320" Canvas.Right="-80" Canvas.Bottom="-120" Opacity="0.08" Fill="{StaticResource AccentBlue}"/>
+            </Canvas>
 
-            <!-- Custom Title Bar -->
-            <Border Grid.Row="0" Grid.ColumnSpan="2" 
-                    Background="#0C0D14"
-                    CornerRadius="16,16,0,0" 
-                    Height="40" 
-                    Margin="-20,-20,-20,0"
-                    BorderBrush="#1A1C26"
-                    BorderThickness="0,0,0,1"
-                    MouseLeftButtonDown="Window_MouseLeftButtonDown">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0">
-                        <Border Width="10" Height="10" CornerRadius="5" Background="#10B981" VerticalAlignment="Center"/>
-                        <StackPanel Margin="8,0,0,0">
-                            <TextBlock Text="SRXMDL" Foreground="White" FontSize="11" FontWeight="Bold"/>
-                            <TextBlock Text="Stream Monitor" Foreground="{StaticResource TextSecondary}" FontSize="9"/>
-                        </StackPanel>
-                    </StackPanel>
-                    
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-                        <Button x:Name="LoginButton" Content="" FontFamily="Segoe MDL2 Assets"
-                                ToolTip="Login"
-                                Click="LoginButton_Click"
-                                Style="{StaticResource TitleBarButton}" Margin="4,0"/>
-                        <Button x:Name="MinimizeButton" Content="" FontFamily="Segoe MDL2 Assets"
-                                Click="MinimizeButton_Click"
-                                Style="{StaticResource TitleBarButton}" Margin="4,0"/>
-                        <Button x:Name="MaximizeButton" Content="" FontFamily="Segoe MDL2 Assets"
-                                Click="MaximizeButton_Click"
-                                Style="{StaticResource TitleBarButton}" Margin="4,0"/>
-                        <Button x:Name="CloseButton" Content="" FontFamily="Segoe MDL2 Assets"
-                                Click="CloseButton_Click"
-                                Style="{StaticResource TitleBarCloseButton}" Margin="4,0,6,0"/>
-                </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- Hero Header -->
-            <Border Grid.Row="1" Grid.ColumnSpan="2" Style="{StaticResource GlassCard}" Padding="10,6" Margin="0,6">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="SIRIUSXM" 
-                                   Foreground="{StaticResource AccentGradient}" 
-                                   FontSize="12" 
-                                   FontWeight="Black"
-                                   Margin="0,0,0,2">
-                            <TextBlock.Effect>
-                                <DropShadowEffect Color="#667EEA" Opacity="0.5" BlurRadius="8" ShadowDepth="0"/>
-                            </TextBlock.Effect>
-                        </TextBlock>
-                        <TextBlock Text="Advanced Stream Monitor" 
-                                   Foreground="{StaticResource TextSecondary}"
-                                   FontSize="10" 
-                                   FontWeight="Light"/>
-                </StackPanel>
-                
-                    <Border Grid.Column="1" Background="#1F2230" 
-                            CornerRadius="8" Padding="10,5">
-                        <StackPanel HorizontalAlignment="Center">
-                            <TextBlock Text="CAPTURED" Foreground="White" FontSize="8" FontWeight="Bold" HorizontalAlignment="Center"/>
-                            <TextBlock x:Name="TotalCapturedCount" Text="0" Foreground="White" FontSize="14" FontWeight="Black" HorizontalAlignment="Center"/>
-                    </StackPanel>
-                </Border>
-            </Grid>
-        </Border>
-
-            <!-- Control Panel -->
-            <Border Grid.Row="2" Grid.ColumnSpan="2" Style="{StaticResource GlassCard}" Padding="24,15" Margin="0,0,0,12">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                
-                    <StackPanel Orientation="Horizontal">
-                        <Button x:Name="StartButton" Content="⚡ START MONITORING" Click="StartButton_Click" 
-                                Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonGreen}"
-                                Padding="18,10" FontSize="13" Margin="0,0,12,0" FontWeight="Bold">
-                            <Button.Effect>
-                                <DropShadowEffect Color="#39FF14" Opacity="0.8" BlurRadius="15" ShadowDepth="0"/>
-                            </Button.Effect>
-                        </Button>
-                        <Button x:Name="StopButton" Content="⏹ STOP" Click="StopButton_Click" 
-                                Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonPink}"
-                                IsEnabled="False" Padding="16,10" FontSize="13"/>
-                </StackPanel>
-                
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Ellipse x:Name="StatusIndicator" Style="{StaticResource NeonStatusIndicator}"
-                                Fill="{StaticResource NeonPink}" Margin="0,0,15,0"/>
-                        <TextBlock x:Name="ConnectionStatus" Text="STANDBY" 
-                                   Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="Bold"
-                               VerticalAlignment="Center"/>
-                </StackPanel>
-            </Grid>
-        </Border>
-
-            <!-- Stream Data Table -->
-            <Border Grid.Row="3" Grid.Column="0" Style="{StaticResource GlassCard}" Padding="0" Margin="0,0,8,12">
-            <Grid>
+            <Grid Margin="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                
-                    <Border Grid.Row="0" Background="{StaticResource CardGradient}" 
-                            CornerRadius="16,16,0,0" Padding="18,12">
+
+                <!-- Custom Title Bar -->
+                <Border Grid.Row="0"
+                        Background="#0A0B10"
+                        CornerRadius="18,18,0,0"
+                        Height="42"
+                        BorderBrush="#1A1C26"
+                        BorderThickness="0,0,0,1"
+                        MouseLeftButtonDown="Window_MouseLeftButtonDown">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                            <TextBlock Text="Stream Activity" 
-                                   Foreground="{StaticResource TextPrimary}" 
-                                   FontSize="15" FontWeight="Bold"/>
-                            <Button Grid.Column="1" Content="Clear All" Click="ClearStreams_Click"
-                                    Style="{StaticResource GradientButton}"
-                                    Padding="10,6" FontSize="11"/>
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0">
+                            <Border Width="9" Height="9" CornerRadius="4.5" Background="{StaticResource AccentBlue}" VerticalAlignment="Center">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="#0A84FF" Opacity="0.8" BlurRadius="8" ShadowDepth="0"/>
+                                </Border.Effect>
+                            </Border>
+                            <TextBlock Text="SRXMDL" Foreground="White" FontSize="11" FontWeight="Bold" Margin="9,0,0,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Stream Monitor" Foreground="{StaticResource TextMuted}" FontSize="10" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                            <Button x:Name="LoginButton" Content="&#xE13D;" FontFamily="Segoe MDL2 Assets"
+                                    ToolTip="Saved credentials"
+                                    Click="LoginButton_Click"
+                                    Style="{StaticResource TitleBarButton}" Margin="4,0"/>
+                            <Button x:Name="MinimizeButton" Content="&#xE949;" FontFamily="Segoe MDL2 Assets"
+                                    Click="MinimizeButton_Click"
+                                    Style="{StaticResource TitleBarButton}" Margin="4,0"/>
+                            <Button x:Name="MaximizeButton" Content="&#xE739;" FontFamily="Segoe MDL2 Assets"
+                                    Click="MaximizeButton_Click"
+                                    Style="{StaticResource TitleBarButton}" Margin="4,0"/>
+                            <Button x:Name="CloseButton" Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets"
+                                    Click="CloseButton_Click"
+                                    Style="{StaticResource TitleBarCloseButton}" Margin="4,0,6,0"/>
+                        </StackPanel>
                     </Grid>
                 </Border>
-                
-                    <ListView Grid.Row="1" x:Name="StreamListView" 
-                              Style="{StaticResource ModernListView}"
-                              ItemContainerStyle="{StaticResource FuturisticListViewItem}"
-                              Padding="15">
-                    <ListView.View>
-                            <GridView ColumnHeaderContainerStyle="{StaticResource FuturisticGridViewColumnHeader}">
-                                <GridViewColumn Header="Time" Width="110">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding Timestamp, StringFormat=HH:mm:ss}" 
-                                                   Foreground="{StaticResource TextPrimary}"
-                                                   FontFamily="JetBrains Mono, Consolas" FontSize="11" FontWeight="Medium"/>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                                <GridViewColumn Header="Type" Width="90">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                            <Border Background="#2D2F3A" 
-                                                    CornerRadius="8" Padding="10,5">
-                                            <TextBlock Text="{Binding StreamType}" 
-                                                           Foreground="{StaticResource TextPrimary}" FontSize="10" FontWeight="SemiBold"
-                                                       HorizontalAlignment="Center"/>
-                                        </Border>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                                <GridViewColumn Header="Art" Width="64">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
+
+                <!-- Toolbar: brand + monitoring controls -->
+                <Border Grid.Row="1" Background="#0A0B10" BorderBrush="#1A1C26" BorderThickness="0,0,0,1" Padding="24,14">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="SiriusXM" Foreground="{StaticResource AccentBlue}" FontSize="16" FontWeight="Black" VerticalAlignment="Center"/>
+                            <TextBlock Text=" Stream Monitor" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Light" VerticalAlignment="Center"/>
+                            <Border Background="{StaticResource SurfaceRaised}" CornerRadius="10" Padding="12,5" Margin="18,0,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="CAPTURED" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="TotalCapturedCount" Text="0" Foreground="{StaticResource AccentBlue}" FontSize="13" FontWeight="Black" Margin="7,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="StartButton" Content="Start Monitoring" Click="StartButton_Click"
+                                    Style="{StaticResource PrimaryButton}" Margin="0,0,10,0"/>
+                            <Button x:Name="StopButton" Content="Stop" Click="StopButton_Click"
+                                    Style="{StaticResource OutlineButton}"
+                                    IsEnabled="False" Margin="0,0,20,0"/>
+
+                            <Ellipse x:Name="StatusIndicator" Style="{StaticResource StatusDot}"
+                                     Fill="{StaticResource AccentRed}" Margin="0,0,10,0"/>
+                            <TextBlock x:Name="ConnectionStatus" Text="STANDBY" 
+                                       Foreground="{StaticResource TextSecondary}" FontSize="12" FontWeight="Bold"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Main split: player | drag splitter | feature panel -->
+                <Grid Grid.Row="2" Margin="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition x:Name="PlayerColumn" Width="*" MinWidth="280"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition x:Name="FeatureColumn" Width="*" MinWidth="280"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left half: SiriusXM Player -->
+                    <Border x:Name="PlayerCard" Grid.Column="0" Style="{StaticResource GlassCard}" Padding="0" Margin="0,0,10,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" Background="{StaticResource CardGradient}" CornerRadius="18,18,0,0" Padding="20,14">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="SIRIUSXM PLAYER" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="Bold" VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Ellipse x:Name="PlayerStatusIndicator" Width="8" Height="8" Fill="{StaticResource AccentRed}" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="PlayerStatusText" Text="Not signed in" Foreground="{StaticResource TextSecondary}" FontSize="10" Margin="7,0,10,0" VerticalAlignment="Center"/>
+                                        <Button x:Name="ExpandWebButton" Content="&#xE740;" FontFamily="Segoe MDL2 Assets" Click="ExpandWebButton_Click"
+                                                Style="{StaticResource IconButtonStyle}" Width="26" Height="26" FontSize="12"
+                                                Foreground="{StaticResource TextSecondary}"
+                                                ToolTip="Expand player"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <Border Grid.Row="1" CornerRadius="0,0,18,18" ClipToBounds="True">
+                                <wv2:WebView2 x:Name="SxmWebView" DefaultBackgroundColor="#06070A"/>
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- Drag splitter -->
+                    <GridSplitter Grid.Column="1" Width="14" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                                  Background="Transparent" ShowsPreview="True" ResizeBehavior="PreviousAndNext">
+                        <GridSplitter.Template>
+                            <ControlTemplate TargetType="GridSplitter">
+                                <Border Background="Transparent">
+                                    <Border x:Name="Handle" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                                            Background="{StaticResource BorderSubtle}" CornerRadius="2" Margin="0,40"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Handle" Property="Background" Value="{StaticResource AccentBlue}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </GridSplitter.Template>
+                    </GridSplitter>
+
+                    <!-- Right half: feature panel -->
+                    <Border x:Name="FeatureCard" Grid.Column="2" Style="{StaticResource GlassCard}" Padding="0" Margin="10,0,0,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Segmented tabs -->
+                            <Border Grid.Row="0" Background="{StaticResource CardGradient}" CornerRadius="18,18,0,0" Padding="16,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Background="#0D0F14" CornerRadius="18" Padding="4">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button x:Name="StreamsTabButton" Content="Stream Activity" Click="StreamsTabButton_Click"
+                                                    Style="{StaticResource SegmentedTabButton}"/>
+                                            <Button x:Name="ArtistsTabButton" Content="Artists" Click="ArtistsTabButton_Click"
+                                                    Style="{StaticResource SegmentedTabButton}"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Button x:Name="ClearStreamsButton" Grid.Column="1" Content="Clear All" Click="ClearStreams_Click"
+                                            Style="{StaticResource OutlineButton}"
+                                            HorizontalAlignment="Right" Padding="14,7" FontSize="11"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Content: Streams / Artists -->
+                            <Grid Grid.Row="1">
+                                <ListView x:Name="StreamListView"
+                                          Style="{StaticResource ModernListView}"
+                                          ItemContainerStyle="{StaticResource ListRowItemStyle}"
+                                          Padding="14">
+                                    <ListView.View>
+                                        <GridView ColumnHeaderContainerStyle="{StaticResource ListColumnHeaderStyle}">
+                                            <GridViewColumn Header="Time" Width="90">
+                                                <GridViewColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Timestamp, StringFormat=HH:mm:ss}" 
+                                                                   Foreground="{StaticResource TextPrimary}"
+                                                                   FontFamily="Consolas" FontSize="11" FontWeight="Medium"/>
+                                                    </DataTemplate>
+                                                </GridViewColumn.CellTemplate>
+                                            </GridViewColumn>
+                                            <GridViewColumn Header="Type" Width="76">
+                                                <GridViewColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <Border Background="{StaticResource SurfaceRaised}" CornerRadius="8" Padding="9,4">
+                                                            <TextBlock Text="{Binding StreamType}" 
+                                                                       Foreground="{StaticResource AccentBlue}" FontSize="10" FontWeight="SemiBold"
+                                                                       HorizontalAlignment="Center"/>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </GridViewColumn.CellTemplate>
+                                            </GridViewColumn>
+                                            <GridViewColumn Header="Art" Width="56">
+                                                <GridViewColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <Grid>
+                                                            <Border Width="30" Height="30" CornerRadius="6" ClipToBounds="True">
+                                                                <Image Source="{Binding PreferredImageUrl}" 
+                                                                       Stretch="UniformToFill"
+                                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                            </Border>
+                                                            <Border Width="30" Height="30" CornerRadius="6" 
+                                                                    Background="#1A1D26" 
+                                                                    Visibility="{Binding PreferredImageUrl, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}">
+                                                                <TextBlock Text="🎵" 
+                                                                         FontSize="13" 
+                                                                         Foreground="{StaticResource TextMuted}" 
+                                                                         HorizontalAlignment="Center" 
+                                                                         VerticalAlignment="Center"/>
+                                                            </Border>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </GridViewColumn.CellTemplate>
+                                            </GridViewColumn>
+                                            <GridViewColumn Header="Track" Width="230">
+                                                <GridViewColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding TrackName}" 
+                                                                       Foreground="{StaticResource TextPrimary}"
+                                                                       FontSize="12" FontWeight="SemiBold"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding ArtistName}" 
+                                                                   Foreground="{StaticResource TextSecondary}"
+                                                                       FontSize="10"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </GridViewColumn.CellTemplate>
+                                            </GridViewColumn>
+                                            <GridViewColumn Header="Actions" Width="190">
+                                                <GridViewColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Button Content="📋" Click="CopyButton_Click" 
+                                                                    Style="{StaticResource AccentIconButton}"
+                                                                    ToolTip="Copy URL" Margin="0,0,5,0" Padding="9,6"/>
+                                                            <Button Content="🎶" Click="ApplyNowPlaying_Click" 
+                                                                    Style="{StaticResource AccentIconButton}"
+                                                                    ToolTip="Apply Now Playing metadata" Margin="0,0,5,0" Padding="9,6"/>
+                                                            <Button Content="▶" Click="PlayButton_Click" 
+                                                                    ToolTip="Play Track" Margin="0,0,5,0" Padding="9,6">
+                                                                <Button.Style>
+                                                                    <Style TargetType="Button" BasedOn="{StaticResource AccentIconButton}">
+                                                                        <Setter Property="Visibility" Value="{Binding CanPlay, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding StreamType}" Value="m3u8">
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Button.Style>
+                                                            </Button>
+                                                            <Button Content="💾" Click="DownloadButton_Click"
+                                                                    Style="{StaticResource AccentIconButton}"
+                                                                    ToolTip="Save Track" Padding="9,6"/>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </GridViewColumn.CellTemplate>
+                                            </GridViewColumn>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+
+                                <ScrollViewer x:Name="ArtistsPanel" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                                    <ListView x:Name="ArtistListView" 
+                                             Style="{StaticResource ModernListView}"
+                                             Margin="10">
+                                        <ListView.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal"/>
+                                            </ItemsPanelTemplate>
+                                        </ListView.ItemsPanel>
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="190" Height="220" Margin="6" 
+                                                        Background="{StaticResource CardGradient}" 
+                                                        BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1"
+                                                        CornerRadius="14">
+                                                    <Grid>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="130"/>
+                                                            <RowDefinition Height="*"/>
+                                                        </Grid.RowDefinitions>
+
+                                                        <!-- Artist Image -->
+                                                        <Border Grid.Row="0" CornerRadius="14,14,0,0" ClipToBounds="True">
+                                                            <Grid>
+                                                                <Image Source="{Binding ThumbnailUrl}" 
+                                                                       Stretch="UniformToFill"
+                                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                                <Border Background="#1A1D26" 
+                                                                        Visibility="{Binding ThumbnailUrl, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}">
+                                                                    <TextBlock Text="🎵" 
+                                                                             FontSize="36" 
+                                                                             Foreground="{StaticResource TextMuted}" 
+                                                                             HorizontalAlignment="Center" 
+                                                                             VerticalAlignment="Center"/>
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+
+                                                        <!-- Artist Info and Controls -->
+                                                        <Grid Grid.Row="1" Margin="10">
+                                                            <Grid.RowDefinitions>
+                                                                <RowDefinition Height="Auto"/>
+                                                                <RowDefinition Height="Auto"/>
+                                                                <RowDefinition Height="*"/>
+                                                            </Grid.RowDefinitions>
+
+                                                            <TextBlock Text="{Binding Artist}" 
+                                                                       Foreground="{StaticResource TextPrimary}"
+                                                                       FontSize="13" 
+                                                                       FontWeight="SemiBold"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Margin="0,0,0,4"/>
+
+                                                            <TextBlock Grid.Row="1" 
+                                                                       Text="{Binding ArtistStationUrl}" 
+                                                                       Foreground="{StaticResource TextMuted}"
+                                                                       FontSize="9"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip="{Binding ArtistStationUrl}"
+                                                                       Margin="0,0,0,8"/>
+
+                                                            <StackPanel Grid.Row="2" 
+                                                                      Orientation="Horizontal" 
+                                                                      HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Bottom">
+                                                                <Button Content="▶"
+                                                                        Click="PlayArtistStation_Click" 
+                                                                        ToolTip="Play Station" 
+                                                                        Margin="0,0,4,0"
+                                                                        IsEnabled="True"
+                                                                        Style="{StaticResource PlayButtonStyle}"/>
+                                                                <Button Click="ToggleFavorite_Click" 
+                                                                        ToolTip="Toggle Favorite" 
+                                                                        Margin="0,0,4,0">
+                                                                    <Button.Style>
+                                                                        <Style TargetType="Button" BasedOn="{StaticResource FavoriteButtonStyle}">
+                                                                            <Setter Property="Content" Value="☆"/>
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                                                                                    <Setter Property="Content" Value="★"/>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </Button.Style>
+                                                                </Button>
+                                                                <Button Content="ⓘ"
+                                                                        Click="ArtistInfoButton_Click"
+                                                                        ToolTip="Artist Info"
+                                                                        Style="{StaticResource InfoButtonStyle}"/>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
+                                </ScrollViewer>
+                            </Grid>
+
+                            <!-- Now Playing footer -->
+                            <Border Grid.Row="2" Background="{StaticResource SurfaceRaised}" CornerRadius="0,0,18,18" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="14,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Margin="0,0,10,0" CornerRadius="8" ClipToBounds="True">
                                         <Grid>
-                                            <Border Width="32" Height="32" CornerRadius="6" ClipToBounds="True">
-                                                <Image Source="{Binding PreferredImageUrl}" 
-                                                       Stretch="UniformToFill"
-                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
-                                            </Border>
-                                            <Border Width="32" Height="32" CornerRadius="6" 
-                                                    Background="#80000000" 
-                                                    Visibility="{Binding PreferredImageUrl, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}">
-                                                <TextBlock Text="&#xE8D6;" 
-                                                         FontFamily="Segoe MDL2 Assets" 
-                                                         FontSize="14" 
-                                                         Foreground="White" 
+                                            <Image x:Name="NowPlayingArt" Stretch="UniformToFill" Width="52" Height="52"/>
+                                            <Border Background="#1A1D26" Visibility="{Binding ElementName=NowPlayingArt, Path=Source, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}">
+                                                <TextBlock Text="🎵" 
+                                                         FontSize="16" 
+                                                         Foreground="{StaticResource TextMuted}" 
                                                          HorizontalAlignment="Center" 
                                                          VerticalAlignment="Center"/>
                                             </Border>
                                         </Grid>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                                <GridViewColumn Header="Track" Width="260">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding TrackName}" 
-                                                       Foreground="{StaticResource TextPrimary}"
-                                                       FontSize="12" FontWeight="SemiBold"/>
-                                            <TextBlock Text="{Binding ArtistName}" 
-                                                   Foreground="{StaticResource TextSecondary}"
-                                                       FontSize="10"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                                <GridViewColumn Header="Actions" Width="220">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Orientation="Horizontal">
-                                                <Button Content="📋" Click="CopyButton_Click" 
-                                                        Style="{StaticResource GradientButton}"
-                                                        ToolTip="Copy Info" Margin="0,0,6,0" Padding="10,6"/>
-                                                <Button Content="🎶" Click="ApplyNowPlaying_Click" 
-                                                        Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonCyan}"
-                                                        ToolTip="Apply Now Playing metadata" Margin="0,0,6,0" Padding="10,6"/>
-                                                <Button Content="▶️" Click="PlayButton_Click" 
-                                                        BorderBrush="{StaticResource NeonGreen}"
-                                                        ToolTip="Play Track" Margin="0,0,6,0" Padding="10,6">
-                                                    <Button.Style>
-                                                        <Style TargetType="Button" BasedOn="{StaticResource NeonButton}">
-                                                            <Setter Property="Visibility" Value="{Binding CanPlay, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding StreamType}" Value="m3u8">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Button.Style>
-                                                </Button>
-                                                <Button Content="💾" Click="DownloadButton_Click"
-                                                        Style="{StaticResource NeonButton}" BorderBrush="{StaticResource NeonCyan}"
-                                                        ToolTip="Save Track" Padding="10,6"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                        </GridView>
-                    </ListView.View>
-                </ListView>
-            </Grid>
-        </Border>
-
-        <!-- Artist Section -->
-            <Border x:Name="ArtistSectionBorder" Grid.Row="3" Grid.Column="1" Style="{StaticResource GlassCard}" Padding="0" Margin="8,0,0,12">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                
-                    <Border Grid.Row="0" Background="{StaticResource CardGradient}" 
-                            CornerRadius="16,16,0,0" Padding="18,12">
-                        <TextBlock Text="🎨 ARTIST SECTION" 
-                               Foreground="{StaticResource TextPrimary}" 
-                                   FontSize="16" FontWeight="Bold"/>
-                </Border>
-                
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                        <ListView x:Name="ArtistListView" 
-                                 Style="{StaticResource ModernListView}"
-                                 Margin="10">
-                            <ListView.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal"/>
-                                </ItemsPanelTemplate>
-                            </ListView.ItemsPanel>
-                            <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Width="200" Height="230" Margin="6" 
-                                            Background="{StaticResource CardGradient}" 
-                                            CornerRadius="15">
-                                        <Grid>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="140"/>
-                                                <RowDefinition Height="*"/>
-                                            </Grid.RowDefinitions>
-
-                                            <!-- Artist Image -->
-                                            <Border Grid.Row="0" CornerRadius="15,15,0,0" ClipToBounds="True">
-                                                <Grid>
-                                                    <Image Source="{Binding ThumbnailUrl}" 
-                                                           Stretch="UniformToFill"
-                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
-                                                    <Border Background="#80000000" 
-                                                            Visibility="{Binding ThumbnailUrl, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}">
-                                                        <TextBlock Text="&#xE8D6;" 
-                                                                 FontFamily="Segoe MDL2 Assets" 
-                                                                 FontSize="40" 
-                                                                 Foreground="White" 
-                                                                 HorizontalAlignment="Center" 
-                                                                 VerticalAlignment="Center"/>
-                                                    </Border>
-                                                </Grid>
-                                            </Border>
-
-                                            <!-- Artist Info and Controls -->
-                                            <Grid Grid.Row="1" Margin="10">
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="*"/>
-                                                </Grid.RowDefinitions>
-
-                                                <!-- Artist Name -->
-                                                <TextBlock Text="{Binding Artist}" 
-                                                           Foreground="{StaticResource TextPrimary}"
-                                                           FontSize="13" 
-                                                           FontWeight="SemiBold"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           Margin="0,0,0,4"/>
-
-                                                <!-- Artist Station URL -->
-                                                <TextBlock Grid.Row="1" 
-                                                           Text="{Binding ArtistStationUrl}" 
-                                                           Foreground="{StaticResource TextSecondary}"
-                                                           FontSize="9"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           ToolTip="{Binding ArtistStationUrl}"
-                                                           Margin="0,0,0,8"/>
-
-                                                <!-- Action Buttons -->
-                                                <StackPanel Grid.Row="2" 
-                                                          Orientation="Horizontal" 
-                                                          HorizontalAlignment="Center"
-                                                          VerticalAlignment="Bottom">
-                                                    <Button Content="&#x25B6;" 
-                                                            Click="PlayArtistStation_Click" 
-                                                            ToolTip="Play Station" 
-                                                            Margin="0,0,8,0"
-                                                            IsEnabled="True"
-                                                            Style="{StaticResource PlayButtonStyle}"/>
-                                                    <Button Click="ToggleFavorite_Click" 
-                                                            ToolTip="Toggle Favorite" 
-                                                            Margin="0,0,8,0">
-                                                        <Button.Style>
-                                                            <Style TargetType="Button" BasedOn="{StaticResource FavoriteButtonStyle}">
-                                                                <Setter Property="Content" Value="&#x2B50;"/>
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding IsFavorite}" Value="True">
-                                                                        <Setter Property="Content" Value="&#x2605;"/>
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Button.Style>
-                                                    </Button>
-                                                    <Button Content="&#x2139;" 
-                                                            Click="ArtistInfoButton_Click"
-                                                            ToolTip="Artist Info"
-                                                            Margin="0,0,12,0"
-                                                            Style="{StaticResource InfoButtonStyle}"/>
-                                                </StackPanel>
-                                            </Grid>
-                                        </Grid>
                                     </Border>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                    </ScrollViewer>
-            </Grid>
-        </Border>
 
-            <!-- Now Playing Section -->
-            <Border Grid.Row="4" Grid.ColumnSpan="2" Style="{StaticResource GlassCard}" Padding="0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="140"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                
-                <!-- Album Art -->
-                <Border Grid.Column="0" Margin="6" CornerRadius="8" ClipToBounds="True">
+                                    <Grid Grid.Column="1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock x:Name="NowPlayingTrack" 
+                                                     Text="No track playing" 
+                                                     Foreground="{StaticResource TextPrimary}" 
+                                                     FontSize="12" 
+                                                     FontWeight="SemiBold"
+                                                     TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock x:Name="NowPlayingStation" 
+                                                     Text="No station selected" 
+                                                     Foreground="{StaticResource TextSecondary}" 
+                                                     FontSize="10"
+                                                     TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button x:Name="SkipBackButton"
+                                                    Click="SkipBackButton_Click"
+                                                    MouseEnter="SkipBackButton_MouseEnter"
+                                                    MouseLeave="SkipBackButton_MouseLeave"
+                                                    IsEnabled="{Binding IsMonitoring}"
+                                                    Style="{StaticResource IconButtonStyle}"
+                                                    Width="34" Height="34"
+                                                    ToolTip="Skip to previous track">
+                                                <Grid Width="18" Height="18">
+                                                    <Path x:Name="SkipBackIcon" 
+                                                          Data="M7.764 4.554a1 1 0 1 0-2 0v14.747a1 1 0 1 0 2 0v-5.15l9.01 5.635.006.003a1.64 1.64 0 0 0 2.498-1.363V5.574A1.64 1.64 0 0 0 16.78 4.21l-.007.004-9.009 5.634zM8.096 12l9.182-5.743v11.486z" 
+                                                          Fill="{StaticResource TextSecondary}"/>
+                                                </Grid>
+                                            </Button>
+                                            <Button x:Name="PauseButton"
+                                                    Click="PauseButton_Click"
+                                                    MouseEnter="PauseButton_MouseEnter"
+                                                    MouseLeave="PauseButton_MouseLeave"
+                                                    IsEnabled="{Binding IsMonitoring}"
+                                                    Style="{StaticResource IconButtonStyle}"
+                                                    Width="34" Height="34"
+                                                    ToolTip="Pause playback">
+                                                <Grid Width="18" Height="18">
+                                                    <Path x:Name="PauseIcon" 
+                                                          Data="M7 2.754a2 2 0 0 0-2 2v14.492a2 2 0 0 0 4 0V4.754a2 2 0 0 0-2-2m10 0a2 2 0 0 0-2 2v14.492a2 2 0 0 0 4 0V4.754a2 2 0 0 0-2-2" 
+                                                          Fill="{StaticResource TextSecondary}"/>
+                                                    <Path x:Name="PlayIcon" 
+                                                          Data="M20.692 10.702c1 .577 1 2.02 0 2.598L7.19 21.094a1.5 1.5 0 0 1-2.25-1.299V4.206a1.5 1.5 0 0 1 2.25-1.298z" 
+                                                          Fill="{StaticResource TextSecondary}"
+                                                          Visibility="Collapsed"/>
+                                                </Grid>
+                                            </Button>
+                                            <Button x:Name="ForwardButton"
+                                                    Click="ForwardButton_Click"
+                                                    MouseEnter="ForwardButton_MouseEnter"
+                                                    MouseLeave="ForwardButton_MouseLeave"
+                                                    IsEnabled="{Binding IsMonitoring}"
+                                                    Style="{StaticResource IconButtonStyle}"
+                                                    Width="34" Height="34"
+                                                    ToolTip="Skip to next track">
+                                                <Grid Width="18" Height="18">
+                                                    <Path x:Name="ForwardIcon" 
+                                                          Data="M16.757 4.626a1 1 0 1 1 2 0v14.747a1 1 0 1 1-2 0v-5.15l-9.009 5.635-.006.004a1.64 1.64 0 0 1-2.498-1.363V5.646a1.64 1.64 0 0 1 2.498-1.364l.006.004 9.01 5.634zm-.331 7.446L7.243 6.329v11.486z" 
+                                                          Fill="{StaticResource TextSecondary}"/>
+                                                </Grid>
+                                            </Button>
+                                            <Button x:Name="LyricsButton"
+                                                    Click="LyricsButton_Click"
+                                                    IsEnabled="{Binding IsMonitoring}"
+                                                    Style="{StaticResource IconButtonStyle}"
+                                                    Width="34" Height="34"
+                                                    ToolTip="Show lyrics">
+                                                <Grid Width="18" Height="18">
+                                                    <Path x:Name="LyricsIcon" 
+                                                          Data="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" 
+                                                          Fill="{StaticResource TextSecondary}"/>
+                                                </Grid>
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- Status Footer -->
+                <Border Grid.Row="3" Background="Transparent" Padding="24,4,20,12">
                     <Grid>
-                        <Image x:Name="NowPlayingArt" Stretch="UniformToFill" Width="80" Height="80"/>
-                        <Border Background="#80000000" Visibility="{Binding ElementName=NowPlayingArt, Path=Source, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}">
-                            <TextBlock Text="&#xE8D6;" 
-                                     FontFamily="Segoe MDL2 Assets" 
-                                     FontSize="16" 
-                                     Foreground="White" 
-                                     HorizontalAlignment="Center" 
-                                     VerticalAlignment="Center"/>
-                        </Border>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Border Background="{StaticResource AccentBlue}" CornerRadius="6" Padding="7,3" Margin="0,0,10,0">
+                                <TextBlock Text="READY" Foreground="White" FontSize="9" FontWeight="Bold"/>
+                            </Border>
+                            <TextBlock x:Name="StatusText" 
+                                       Text="Monitoring service ready" 
+                                       Foreground="{StaticResource TextSecondary}"
+                                       FontSize="10"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <TextBlock Grid.Column="1" 
+                                   Text="by Zano" 
+                                   Foreground="{StaticResource TextMuted}"
+                                   FontSize="10"
+                                   VerticalAlignment="Center"/>
                     </Grid>
                 </Border>
-                
-                <!-- Track Info and Controls -->
-                    <Grid Grid.Column="1" Margin="0,6,6,6">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <!-- Track Name -->
-                    <TextBlock x:Name="NowPlayingTrack" 
-                             Text="No track playing" 
-                             Foreground="White" 
-                                 FontSize="12" 
-                             FontWeight="SemiBold"
-                             Margin="0,0,0,2"/>
-                    
-                    <!-- Station Name -->
-                    <StackPanel Grid.Row="1" Orientation="Horizontal">
-                        <TextBlock Text="&#xE8D6;" 
-                                 FontFamily="Segoe MDL2 Assets" 
-                                 FontSize="8" 
-                                 Foreground="#B3B3B3" 
-                                 Margin="0,0,4,0"/>
-                    <TextBlock x:Name="NowPlayingStation" 
-                             Text="No station selected" 
-                             Foreground="#B3B3B3" 
-                                 FontSize="9"/>
-                    </StackPanel>
-
-                    <!-- Playback Controls -->
-                    <StackPanel Grid.Row="2" 
-                              Orientation="Horizontal" 
-                              VerticalAlignment="Bottom"
-                              Margin="0,2,0,0">
-                        <Button x:Name="SkipBackButton"
-                                Click="SkipBackButton_Click"
-                                MouseEnter="SkipBackButton_MouseEnter"
-                                MouseLeave="SkipBackButton_MouseLeave"
-                                IsEnabled="{Binding IsMonitoring}"
-                                Margin="0,0,8,0"
-                                ToolTip="Skip to previous track">
-                            <Button.Content>
-                                <Grid Width="24" Height="24">
-                                    <Path x:Name="SkipBackIcon" 
-                                          Data="M7.764 4.554a1 1 0 1 0-2 0v14.747a1 1 0 1 0 2 0v-5.15l9.01 5.635.006.003a1.64 1.64 0 0 0 2.498-1.363V5.574A1.64 1.64 0 0 0 16.78 4.21l-.007.004-9.009 5.634zM8.096 12l9.182-5.743v11.486z" 
-                                          Fill="{StaticResource TextSecondary}"/>
-                                </Grid>
-                            </Button.Content>
-                            <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource NeonButton}">
-                                    <Setter Property="Background" Value="Transparent"/>
-                                    <Setter Property="BorderThickness" Value="0"/>
-                                    <Style.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Foreground" Value="White"/>
-                                        </Trigger>
-                                        <Trigger Property="IsEnabled" Value="False">
-                                            <Setter Property="Foreground" Value="#4B4B4B"/>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                        <Button x:Name="PauseButton"
-                                Click="PauseButton_Click"
-                                MouseEnter="PauseButton_MouseEnter"
-                                MouseLeave="PauseButton_MouseLeave"
-                                IsEnabled="{Binding IsMonitoring}"
-                                Margin="0,0,8,0"
-                                ToolTip="Pause playback">
-                            <Button.Content>
-                                <Grid Width="24" Height="24">
-                                    <!-- Pause Icon -->
-                                    <Path x:Name="PauseIcon" 
-                                          Data="M7 2.754a2 2 0 0 0-2 2v14.492a2 2 0 0 0 4 0V4.754a2 2 0 0 0-2-2m10 0a2 2 0 0 0-2 2v14.492a2 2 0 0 0 4 0V4.754a2 2 0 0 0-2-2" 
-                                          Fill="{StaticResource TextSecondary}"/>
-                                    <!-- Play Icon -->
-                                    <Path x:Name="PlayIcon" 
-                                          Data="M20.692 10.702c1 .577 1 2.02 0 2.598L7.19 21.094a1.5 1.5 0 0 1-2.25-1.299V4.206a1.5 1.5 0 0 1 2.25-1.298z" 
-                                          Fill="{StaticResource TextSecondary}"
-                                          Visibility="Collapsed"/>
-                                </Grid>
-                            </Button.Content>
-                            <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource NeonButton}">
-                                    <Setter Property="Background" Value="Transparent"/>
-                                    <Setter Property="BorderThickness" Value="0"/>
-                                    <Style.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Foreground" Value="White"/>
-                                        </Trigger>
-                                        <Trigger Property="IsEnabled" Value="False">
-                                            <Setter Property="Foreground" Value="#4B4B4B"/>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                        <Button x:Name="ForwardButton"
-                                Click="ForwardButton_Click"
-                                MouseEnter="ForwardButton_MouseEnter"
-                                MouseLeave="ForwardButton_MouseLeave"
-                                IsEnabled="{Binding IsMonitoring}"
-                                Margin="0,0,8,0"
-                                ToolTip="Skip to next track">
-                            <Button.Content>
-                                <Grid Width="24" Height="24">
-                                    <Path x:Name="ForwardIcon" 
-                                          Data="M16.757 4.626a1 1 0 1 1 2 0v14.747a1 1 0 1 1-2 0v-5.15l-9.009 5.635-.006.004a1.64 1.64 0 0 1-2.498-1.363V5.646a1.64 1.64 0 0 1 2.498-1.364l.006.004 9.01 5.634zm-.331 7.446L7.243 6.329v11.486z" 
-                                          Fill="{StaticResource TextSecondary}"/>
-                                </Grid>
-                            </Button.Content>
-                            <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource NeonButton}">
-                                    <Setter Property="Background" Value="Transparent"/>
-                                    <Setter Property="BorderThickness" Value="0"/>
-                                    <Style.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Foreground" Value="White"/>
-                                        </Trigger>
-                                        <Trigger Property="IsEnabled" Value="False">
-                                            <Setter Property="Foreground" Value="#4B4B4B"/>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                        <Button x:Name="LyricsButton"
-                                Click="LyricsButton_Click"
-                                IsEnabled="{Binding IsMonitoring}"
-                                Margin="0,0,8,0"
-                                ToolTip="Show lyrics">
-                            <Button.Content>
-                                <Grid Width="24" Height="24">
-                                    <Path x:Name="LyricsIcon" 
-                                          Data="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" 
-                                          Fill="{StaticResource TextSecondary}"/>
-                                </Grid>
-                            </Button.Content>
-                            <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource NeonButton}">
-                                    <Setter Property="Background" Value="Transparent"/>
-                                    <Setter Property="BorderThickness" Value="0"/>
-                                    <Style.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Foreground" Value="White"/>
-                                        </Trigger>
-                                        <Trigger Property="IsEnabled" Value="False">
-                                            <Setter Property="Foreground" Value="#4B4B4B"/>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                </StackPanel>
-                </Grid>
             </Grid>
-        </Border>
-
-            <!-- Status Footer -->
-            <Border Grid.Row="5" Grid.ColumnSpan="2" Background="Transparent" Padding="12,6" Margin="0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border Background="{StaticResource AccentGradient}" CornerRadius="8" Padding="6,3" Margin="0,0,10,0">
-                            <TextBlock Text="READY" 
-                                       Foreground="White" FontSize="9" FontWeight="Bold"/>
-                    </Border>
-                    <TextBlock x:Name="StatusText" 
-                               Text="Monitoring service ready" 
-                               Foreground="{StaticResource TextSecondary}"
-                                   FontSize="10"
-                               VerticalAlignment="Center"/>
-                </StackPanel>
-                
-                    <TextBlock Grid.Column="1" 
-                               Text="by Zano" 
-                           Foreground="{StaticResource TextMuted}"
-                               FontSize="10"
-                           VerticalAlignment="Center"/>
-            </Grid>
-        </Border>
         </Grid>
-    </Grid>
+    </Border>
 </Window>

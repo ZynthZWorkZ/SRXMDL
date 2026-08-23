@@ -7,23 +7,27 @@
 
 ## Prerequisites
 - Active SiriusXM subscription 📻
-- Google Chrome 🌐
-- .NET 9 SDK (for build/run) 🟪
-- ffmpeg ( for playback, downloads & conversions) ♻
+- .NET 10 SDK (for build/run) 🟪
+- [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) (usually preinstalled on Windows 10/11) 🌐
+- ffmpeg (for playback, downloads & conversions) ♻
 - yt-dlp (For Podcast downloads & Video Downloads) ⬇
 - pycryptodomex (optional but yt-dlp will download AES protected m3u8's faster if installed) ⚠
 
 
 ## Installation
 
-### 1. Install .NET 9.0 SDK
-Download and install the .NET 9.0 SDK for Windows:
-- [Download .NET 9.0 SDK for Windows](https://dotnet.microsoft.com/en-us/download/dotnet/9.0)
+### 1. Install .NET 10 SDK
+Download and install the .NET SDK for Windows:
+- [Download .NET SDK for Windows](https://dotnet.microsoft.com/download)
 
 Verify installation:
 ```bash
 dotnet --version
 ```
+
+### 1b. Install WebView2 Runtime (if needed)
+Most Windows 10/11 systems already have this. If the embedded player fails to load:
+- [Download WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
 
 ### 2. Install yt-dlp
 Download and install yt-dlp for Windows:
@@ -63,34 +67,11 @@ dotnet build
 
 
 ## Usage
-1. Enter your SiriusXM credentials in the login window. Your password will be saved as a hash for future use and security.
-   
-   ![Login Window](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/LG.png)
-   ![Login Window With Credentials](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/LGW.png)
-
-2. Launch the app and click **Start Monitoring** - a Chrome window will open.
-   
-   ![Start Monitoring](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/STM.png)
-
-3. After entering your credentials, start monitoring. The app will create a cookie file for automatic login on future sessions.
-4. Once auto-logged in, simply use the app normally. Capture begins automatically - anything you play will be monitored and sent to the Stream Activity.
-   
-   ![Stream Activity](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/SA1.png)
-
-5. Captured streams will have the following action buttons:
-   - **Copy URL**: Copy the stream URL to your clipboard
-   - **Download**: Download the captured stream to your local storage
-   - **Play**: Play the stream directly in the app (Note: Some streams won't have this button due to AES encryption)
-   - **Copy Metadata**: Copy metadata from now playing stream information for streams with uncaptured metadata
-6. In the download window, you can:
-   - Select different audio quality options for audio streams
-   - For video streams, select **MP4** format from the dropdown menu
-   
-   ![Download Window](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/DLW.png)
-
-7. When you visit any artist page in SiriusXM, the artist will automatically appear in the Artist window for easy access and favoriting.
-   
-   ![Artist Window](https://raw.githubusercontent.com/ZynthZWorkZ/SRXMDL/refs/heads/main/Githubimages/AS.png)
+1. Launch the app — one wide window opens with the **SiriusXM Player** embedded on the left half and your capture panel on the right half. Sign in directly in the player, or save credentials via the login button for optional auto sign-in.
+2. Click **Start Monitoring** to begin recording captured streams to the list (network capture itself is always attached in the background, so nothing is missed while you're signing in or already playing).
+3. Switch between the **Stream Activity** and **Artists** tabs on the right half. Streams support copy, download, play, and metadata actions.
+4. Visit artist pages in the player to populate the **Artists** tab.
+5. Use the download window for quality/format options; ffmpeg and yt-dlp handle conversions.
 
 
 
