@@ -41,6 +41,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
 
     private WebViewSessionService? _sessionService;
     private WebViewNetworkMonitor? _networkMonitor;
+    private SuperNetworkLogger? _superLogger;
     private ArtistStations? _artistStations;
     private FileSystemWatcher? _stationFeedbackWatcher;
 
@@ -228,6 +229,145 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
             Log.Error(ex, "Failed to initialize WebView2 session");
             StatusText.Text = "Failed to initialize player";
         }
+    }
+
+    private void SettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        ClearCacheNormalState.Visibility = Visibility.Visible;
+        ClearCacheConfirmState.Visibility = Visibility.Collapsed;
+        SettingsPopup.IsOpen = !SettingsPopup.IsOpen;
+    }
+
+    private void ClearCacheButton_Click(object sender, RoutedEventArgs e)
+    {
+        ClearCacheNormalState.Visibility = Visibility.Collapsed;
+        ClearCacheConfirmState.Visibility = Visibility.Visible;
+    }
+
+    private void CancelClearCache_Click(object sender, RoutedEventArgs e)
+    {
+        ClearCacheNormalState.Visibility = Visibility.Visible;
+        ClearCacheConfirmState.Visibility = Visibility.Collapsed;
+    }
+
+    private async void ConfirmClearCache_Click(object sender, RoutedEventArgs e)
+    {
+        SettingsPopup.IsOpen = false;
+        await RestartAndClearCacheAsync();
+    }
+
+    private async Task RestartAndClearCacheAsync()
+    {
+        try
+        {
+            StatusText.Text = "Clearing cache and restarting...";
+            Log.Information("User requested WebView2 cache clear; restarting application");
+
+            var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+            if (string.IsNullOrEmpty(exePath))
+            {
+                StatusText.Text = "Could not locate application executable";
+                return;
+            }
+
+            var browserPid = _sessionService?.CoreWebView2?.BrowserProcessId;
+
+            if (_superLogger is { IsRecording: true })
+                await _superLogger.StopAndSaveAsync();
+
+            // Close the WebView2 session synchronously (and stop the CDP monitor) before
+            // spawning the watcher process, so the browser process actually releases the
+            // user data folder instead of racing against our own process exit.
+            _networkMonitor?.Stop();
+            if (_sessionService != null)
+                await _sessionService.DisposeAsync();
+
+            var arguments = $"--clear-cache-after-pid {Environment.ProcessId}";
+            if (browserPid.HasValue)
+                arguments += $" --clear-cache-browser-pid {browserPid.Value}";
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = arguments,
+                UseShellExecute = true
+            });
+
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to restart application for cache clear");
+            StatusText.Text = "Failed to clear cache";
+        }
+    }
+
+    private async void SuperLogButton_Click(object sender, RoutedEventArgs e)
+    {
+        var core = _sessionService?.CoreWebView2;
+
+        try
+        {
+            if (_superLogger is { IsRecording: true })
+            {
+                SuperLogTitleText.Text = "Saving...";
+                var path = await _superLogger.StopAndSaveAsync();
+
+                SuperLogTitleText.Text = "Start Super Log";
+                SuperLogSubtitleText.Text = "Capture full web traffic for debugging";
+                SuperLogRecDot.Visibility = Visibility.Collapsed;
+
+                StatusText.Text = $"Super log saved to {path}";
+                Log.Information("Super log saved to {Path}", path);
+
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = $"/select,\"{path}\"",
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug(ex, "Could not open explorer for super log path");
+                }
+            }
+            else if (core != null)
+            {
+                _superLogger ??= new SuperNetworkLogger();
+                _superLogger.EntryCountChanged += OnSuperLogEntryCountChanged;
+                await _superLogger.StartAsync(core);
+
+                SuperLogTitleText.Text = "Stop Super Log";
+                SuperLogSubtitleText.Text = "Recording... 0 events captured";
+                SuperLogRecDot.Visibility = Visibility.Visible;
+
+                StatusText.Text = "Super log recording started";
+                Log.Information("Super log recording started");
+            }
+            else
+            {
+                StatusText.Text = "Player is not ready yet";
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error toggling super log");
+            StatusText.Text = "Error with super log";
+        }
+
+        SettingsPopup.IsOpen = false;
+    }
+
+    private void OnSuperLogEntryCountChanged(int count)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (_superLogger is { IsRecording: true })
+                SuperLogSubtitleText.Text = $"Recording... {count} events captured";
+        });
     }
 
     private void ExpandWebButton_Click(object sender, RoutedEventArgs e)
@@ -448,6 +588,8 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
                 NowPlayingTrack.Text = "No track playing";
                 NowPlayingStation.Text = "No station selected";
                 NowPlayingArt.Source = null;
+                NowPlayingMeta.Text = string.Empty;
+                NowPlayingMeta.Visibility = Visibility.Collapsed;
                 _currentTrack = new NowPlaying();
             }
         });
@@ -462,10 +604,13 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         try
         {
             var playing = await _playbackService.GetNowPlayingAsync(core);
+            EnrichNowPlayingFromCapturedMetadata(playing);
 
             if (playing.TrackName == _currentTrack.TrackName &&
                 playing.StationName == _currentTrack.StationName &&
-                playing.AlbumArtUrl == _currentTrack.AlbumArtUrl)
+                playing.AlbumArtUrl == _currentTrack.AlbumArtUrl &&
+                playing.AlbumName == _currentTrack.AlbumName &&
+                playing.DurationMs == _currentTrack.DurationMs)
             {
                 return;
             }
@@ -484,6 +629,29 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
                     _currentTrack.StationName = playing.StationName;
                     NowPlayingStation.Text = playing.StationName;
                     Log.Debug("Updated station name to: {StationName}", playing.StationName);
+                }
+
+                if (playing.AlbumName != _currentTrack.AlbumName || playing.DurationMs != _currentTrack.DurationMs)
+                {
+                    _currentTrack.AlbumName = playing.AlbumName;
+                    _currentTrack.DurationMs = playing.DurationMs;
+
+                    var metaParts = new List<string>();
+                    if (!string.IsNullOrWhiteSpace(playing.AlbumName))
+                        metaParts.Add(playing.AlbumName);
+                    if (!string.IsNullOrEmpty(playing.DurationFormatted))
+                        metaParts.Add(playing.DurationFormatted);
+
+                    if (metaParts.Count > 0)
+                    {
+                        NowPlayingMeta.Text = string.Join(" · ", metaParts);
+                        NowPlayingMeta.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        NowPlayingMeta.Text = string.Empty;
+                        NowPlayingMeta.Visibility = Visibility.Collapsed;
+                    }
                 }
 
                 if (playing.AlbumArtUrl != _currentTrack.AlbumArtUrl)
@@ -512,6 +680,30 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         {
             Log.Error(ex, "Error updating now playing information");
         }
+    }
+
+    /// <summary>
+    /// The DOM-scraped now-playing title/art is fragile and lacks album/duration data.
+    /// Cross-reference it against the rich metadata already captured from the
+    /// tuneSource/peek API responses (see StreamNetworkProcessor) to fill the gaps
+    /// and prefer the higher-resolution API artwork when the page hasn't rendered any.
+    /// </summary>
+    private void EnrichNowPlayingFromCapturedMetadata(NowPlaying playing)
+    {
+        if (string.IsNullOrWhiteSpace(playing.TrackName) || playing.TrackName == "No track playing")
+            return;
+
+        var match = StreamEntries.LastOrDefault(e =>
+            string.Equals(e.TrackName, playing.TrackName, StringComparison.OrdinalIgnoreCase));
+
+        if (match == null)
+            return;
+
+        playing.AlbumName ??= match.AlbumName;
+        playing.DurationMs ??= match.DurationMs;
+
+        if (string.IsNullOrEmpty(playing.AlbumArtUrl) && !string.IsNullOrEmpty(match.PreferredImageUrl))
+            playing.AlbumArtUrl = match.PreferredImageUrl;
     }
 
     private async Task HandleAutoLoginAsync(string bearerToken)
@@ -1041,6 +1233,19 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     {
         _stationFeedbackWatcher?.Dispose();
         _networkMonitor?.Stop();
+
+        if (_superLogger is { IsRecording: true })
+        {
+            try
+            {
+                var path = await _superLogger.StopAndSaveAsync();
+                Log.Information("Super log auto-saved on app close: {Path}", path);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to auto-save super log on app close");
+            }
+        }
 
         if (_sessionService != null)
             await _sessionService.DisposeAsync();

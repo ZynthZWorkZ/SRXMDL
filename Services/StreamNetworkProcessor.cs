@@ -496,6 +496,9 @@ public sealed class StreamNetworkProcessor
 
                 var trackName = nameElement.GetString();
                 var artistName = artistNameElement.GetString();
+                var albumName = GetJsonString(item, "albumName");
+                var durationMs = GetJsonInt64(item, "duration");
+                var trackId = GetJsonString(item, "id") ?? GetJsonString(stream, "id");
 
                 if (!stream.TryGetProperty("urls", out var urls) || urls.ValueKind != JsonValueKind.Array)
                     continue;
@@ -519,6 +522,9 @@ public sealed class StreamNetworkProcessor
                             {
                                 existingEntry.TrackName = trackName ?? existingEntry.TrackName;
                                 existingEntry.ArtistName = artistName ?? existingEntry.ArtistName;
+                                existingEntry.AlbumName = albumName ?? existingEntry.AlbumName;
+                                existingEntry.DurationMs = durationMs ?? existingEntry.DurationMs;
+                                existingEntry.TrackId = trackId ?? existingEntry.TrackId;
                                 host.RefreshStreamList();
                             });
                             Log.Information("Updated unnamed entry with title: {TrackName} - {ArtistName}", trackName, artistName);
@@ -538,7 +544,10 @@ public sealed class StreamNetworkProcessor
                             Url = streamUrl,
                             TrackName = trackName ?? "Unknown",
                             ArtistName = artistName ?? "Unknown",
-                            PreferredImageUrl = preferredImageUrl
+                            PreferredImageUrl = preferredImageUrl,
+                            AlbumName = albumName,
+                            DurationMs = durationMs,
+                            TrackId = trackId
                         });
                         host.UpdateTotalCapturedCount();
                     });
@@ -708,6 +717,9 @@ public sealed class StreamNetworkProcessor
             var trackName = "Unknown";
             var artistName = "Unknown";
             string? preferredImageUrl = null;
+            string? albumName = null;
+            long? durationMs = null;
+            string? trackId = null;
 
             if (metadata.TryGetProperty("artist", out var artist) &&
                 artist.TryGetProperty("items", out var items) &&
@@ -722,6 +734,9 @@ public sealed class StreamNetworkProcessor
                     trackName = nameElement.GetString() ?? trackName;
                     artistName = artistNameElement.GetString() ?? artistName;
                     preferredImageUrl = ExtractPreferredImage(item, "images");
+                    albumName = GetJsonString(item, "albumName");
+                    durationMs = GetJsonInt64(item, "duration");
+                    trackId = GetJsonString(item, "id") ?? GetJsonString(stream, "id");
                     break;
                 }
             }
@@ -738,6 +753,8 @@ public sealed class StreamNetworkProcessor
 
                 preferredImageUrl = ExtractPreferredImage(episode, "images")
                     ?? ExtractPreferredImage(episode, "showImages");
+                durationMs = GetJsonInt64(episode, "duration");
+                trackId = GetJsonString(episode, "id") ?? GetJsonString(stream, "id");
             }
 
             if (!stream.TryGetProperty("urls", out var urls) || urls.ValueKind != JsonValueKind.Array)
@@ -763,6 +780,9 @@ public sealed class StreamNetworkProcessor
                             existingEntry.TrackName = trackName;
                             existingEntry.ArtistName = artistName;
                             existingEntry.PreferredImageUrl = preferredImageUrl ?? existingEntry.PreferredImageUrl;
+                            existingEntry.AlbumName = albumName ?? existingEntry.AlbumName;
+                            existingEntry.DurationMs = durationMs ?? existingEntry.DurationMs;
+                            existingEntry.TrackId = trackId ?? existingEntry.TrackId;
                             host.RefreshStreamList();
                         });
                         Log.Information("Updated unnamed entry with title: {TrackName} - {ArtistName}", trackName, artistName);
@@ -781,7 +801,10 @@ public sealed class StreamNetworkProcessor
                         Url = streamUrl,
                         TrackName = trackName,
                         ArtistName = artistName,
-                        PreferredImageUrl = preferredImageUrl
+                        PreferredImageUrl = preferredImageUrl,
+                        AlbumName = albumName,
+                        DurationMs = durationMs,
+                        TrackId = trackId
                     });
                     host.UpdateTotalCapturedCount();
                 });
@@ -883,4 +906,9 @@ public sealed class StreamNetworkProcessor
 
     private static string? GetJsonString(JsonElement element, string propertyName) =>
         element.TryGetProperty(propertyName, out var prop) ? prop.GetString() : null;
+
+    private static long? GetJsonInt64(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var prop) && prop.ValueKind == JsonValueKind.Number && prop.TryGetInt64(out var value)
+            ? value
+            : null;
 }

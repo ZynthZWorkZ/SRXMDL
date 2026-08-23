@@ -255,6 +255,9 @@ public sealed class WebViewSessionService : IAsyncDisposable
             CoreWebView2.SourceChanged -= OnSourceChanged;
         }
 
+        // Dispose releases the CoreWebView2Controller/environment so the browser
+        // process can shut down and release its lock on the user data folder.
+        _webView?.Dispose();
         _webView = null;
         return ValueTask.CompletedTask;
     }

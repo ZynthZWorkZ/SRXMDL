@@ -180,6 +180,29 @@
             </Setter>
         </Style>
 
+        <!-- Settings menu row item -->
+        <Style x:Key="SettingsMenuItemButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="10,10"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#171B26"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Segmented tab button -->
         <Style x:Key="SegmentedTabButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
@@ -485,6 +508,82 @@
                                     ToolTip="Saved credentials"
                                     Click="LoginButton_Click"
                                     Style="{StaticResource TitleBarButton}" Margin="4,0"/>
+                            <Button x:Name="SettingsButton" Content="&#xE713;" FontFamily="Segoe MDL2 Assets"
+                                    ToolTip="Settings"
+                                    AutomationProperties.Name="Settings"
+                                    Click="SettingsButton_Click"
+                                    Style="{StaticResource TitleBarButton}" Margin="4,0"/>
+                            <Popup x:Name="SettingsPopup" PlacementTarget="{Binding ElementName=SettingsButton}"
+                                   Placement="Bottom" HorizontalOffset="-230" VerticalOffset="6"
+                                   StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                                <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource BorderSubtle}"
+                                        BorderThickness="1" CornerRadius="14" Width="264">
+                                    <Border.Effect>
+                                        <DropShadowEffect Color="#000000" Opacity="0.5" BlurRadius="26" ShadowDepth="8"/>
+                                    </Border.Effect>
+                                    <StackPanel>
+                                        <Border Background="{StaticResource CardGradient}" CornerRadius="14,14,0,0" Padding="16,12">
+                                            <TextBlock Text="SETTINGS" Foreground="{StaticResource TextPrimary}" FontSize="11" FontWeight="Bold"/>
+                                        </Border>
+
+                                        <StackPanel Margin="10">
+                                            <!-- Normal state -->
+                                            <StackPanel x:Name="ClearCacheNormalState">
+                                                <Button x:Name="ClearCacheButton" Click="ClearCacheButton_Click"
+                                                        Style="{StaticResource SettingsMenuItemButton}">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Border Width="30" Height="30" CornerRadius="8" Background="#1A1D26" Margin="0,0,10,0">
+                                                            <TextBlock Text="🗑" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Border>
+                                                        <StackPanel VerticalAlignment="Center">
+                                                            <TextBlock Text="Clear Cache" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                                            <TextBlock Text="Erase WebView2 data &amp; restart" Foreground="{StaticResource TextMuted}" FontSize="10"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Button>
+                                            </StackPanel>
+
+                                            <!-- Confirm state -->
+                                            <StackPanel x:Name="ClearCacheConfirmState" Visibility="Collapsed" Margin="4,2">
+                                                <TextBlock Text="This deletes all cached SiriusXM session data and restarts the app. Continue?"
+                                                           Foreground="{StaticResource TextSecondary}" FontSize="11"
+                                                           TextWrapping="Wrap" Margin="0,2,0,12"/>
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                    <Button Content="Cancel" Click="CancelClearCache_Click"
+                                                            Style="{StaticResource OutlineButton}" Padding="14,7" FontSize="11" Margin="0,0,8,0"/>
+                                                    <Button Content="Confirm" Click="ConfirmClearCache_Click"
+                                                            Style="{StaticResource OutlineButton}" Padding="14,7" FontSize="11"
+                                                            BorderBrush="{StaticResource AccentRed}" Foreground="{StaticResource AccentRed}"/>
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                            <Border Height="1" Background="{StaticResource BorderSubtle}" Margin="4,8"/>
+
+                                            <!-- Super Log toggle -->
+                                            <Button x:Name="SuperLogButton" Click="SuperLogButton_Click"
+                                                    AutomationProperties.Name="Toggle Super Log"
+                                                    Style="{StaticResource SettingsMenuItemButton}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Width="30" Height="30" CornerRadius="8" Background="#1A1D26" Margin="0,0,10,0">
+                                                        <Grid>
+                                                            <TextBlock Text="🐛" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                            <Ellipse x:Name="SuperLogRecDot" Width="7" Height="7" Fill="{StaticResource AccentRed}"
+                                                                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0"
+                                                                     Visibility="Collapsed"/>
+                                                        </Grid>
+                                                    </Border>
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock x:Name="SuperLogTitleText" Text="Start Super Log"
+                                                                   Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                                        <TextBlock x:Name="SuperLogSubtitleText" Text="Capture full web traffic for debugging"
+                                                                   Foreground="{StaticResource TextMuted}" FontSize="10"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </Popup>
                             <Button x:Name="MinimizeButton" Content="&#xE949;" FontFamily="Segoe MDL2 Assets"
                                     Click="MinimizeButton_Click"
                                     Style="{StaticResource TitleBarButton}" Margin="4,0"/>
@@ -674,7 +773,7 @@
                                             <GridViewColumn Header="Track" Width="230">
                                                 <GridViewColumn.CellTemplate>
                                                     <DataTemplate>
-                                                        <StackPanel>
+                                                        <StackPanel ToolTip="{Binding DurationFormatted}">
                                                             <TextBlock Text="{Binding TrackName}" 
                                                                        Foreground="{StaticResource TextPrimary}"
                                                                        FontSize="12" FontWeight="SemiBold"
@@ -683,6 +782,11 @@
                                                                    Foreground="{StaticResource TextSecondary}"
                                                                        FontSize="10"
                                                                        TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding AlbumName}"
+                                                                       Foreground="{StaticResource TextMuted}"
+                                                                       FontSize="9"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Visibility="{Binding AlbumName, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                         </StackPanel>
                                                     </DataTemplate>
                                                 </GridViewColumn.CellTemplate>
@@ -858,6 +962,13 @@
                                                      Text="No station selected" 
                                                      Foreground="{StaticResource TextSecondary}" 
                                                      FontSize="10"
+                                                     TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock x:Name="NowPlayingMeta"
+                                                     Text=""
+                                                     Visibility="Collapsed"
+                                                     Foreground="{StaticResource TextMuted}"
+                                                     FontSize="9"
+                                                     Margin="0,2,0,0"
                                                      TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
 
