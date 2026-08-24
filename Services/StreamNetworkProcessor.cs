@@ -65,9 +65,22 @@ public sealed class StreamNetworkProcessor
             return;
         }
 
+        if (url.Contains("litix.io", StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleLitixAsync(request, host);
+            return;
+        }
+
         if (url.Contains("api.edge-gateway.siriusxm.com/playback/play/v1/peek"))
         {
             await HandlePeekAsync(url, request, host);
+            return;
+        }
+
+        if (url.Contains("/live/lookAround", StringComparison.OrdinalIgnoreCase) &&
+            !url.Contains("lookAroundEpisodes", StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleLookAroundAsync(url, host);
             return;
         }
 
@@ -120,16 +133,32 @@ public sealed class StreamNetworkProcessor
                         await ProcessAudioEpisodeAsync(jsonElement, host);
                         break;
                     case "channel-linear":
+                        ProcessChannelLinearTuneSource(jsonElement, host);
+                        await TryProcessPendingLookAroundAsync(host);
                         Log.Information("Channel Linear detected in playlist: {Id}",
                             jsonElement.TryGetProperty("id", out var idElement) ? idElement.GetString() : "unknown");
                         break;
+                    default:
+                        if (jsonElement.TryGetProperty("streams", out var streamsElement) &&
+                            streamsElement.ValueKind == JsonValueKind.Array)
+                        {
+                            UpdateNowPlayingFromFirstStream(streamsElement, host);
+                            await ProcessTuneSourceStreamsAsync(streamsElement, host);
+                        }
+                        break;
                 }
+
+                if (type != "channel-linear")
+                    host.LiveQueueTracker.Clear();
+
+                return;
             }
 
-            if (jsonElement.TryGetProperty("streams", out var streamsElement) &&
-                streamsElement.ValueKind == JsonValueKind.Array)
+            if (jsonElement.TryGetProperty("streams", out var fallbackStreams) &&
+                fallbackStreams.ValueKind == JsonValueKind.Array)
             {
-                await ProcessTuneSourceStreamsAsync(streamsElement, host);
+                UpdateNowPlayingFromFirstStream(fallbackStreams, host);
+                await ProcessTuneSourceStreamsAsync(fallbackStreams, host);
             }
         }
         catch (Exception ex)
@@ -145,8 +174,7 @@ public sealed class StreamNetworkProcessor
         url.EndsWith(".gif", StringComparison.OrdinalIgnoreCase) ||
         url.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ||
         url.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) ||
-        url.Contains("imgsrv-sxm") ||
-        url.Contains("lookaround-cache-prod.streaming.siriusxm.com");
+        url.Contains("imgsrv-sxm");
 
     private static async Task HandleMp3Async(string url, IStreamCaptureHost host)
     {
@@ -255,6 +283,9 @@ public sealed class StreamNetworkProcessor
         host.LastTuneSourcePayload = requestPayload;
         host.LastTuneSourceAuthToken = authToken;
 
+        TryActivateLiveChannelFromRequest(requestPayload, host);
+        await TryProcessPendingLookAroundAsync(host);
+
         if (string.IsNullOrEmpty(authToken) || string.IsNullOrEmpty(requestPayload))
             return;
 
@@ -308,6 +339,14 @@ public sealed class StreamNetworkProcessor
                     : "");
             var trackName = GetJsonString(jsonElement, "an") ?? "";
             var streamUrl = GetJsonString(jsonElement, "url") ?? "";
+
+            if (!string.IsNullOrWhiteSpace(trackName))
+            {
+                host.MetadataTracker.UpdateFromArtistTrack(
+                    trackName,
+                    artistName,
+                    source: "conviva");
+            }
 
             if (string.IsNullOrEmpty(streamUrl))
                 return;
@@ -911,4 +950,426 @@ public sealed class StreamNetworkProcessor
         element.TryGetProperty(propertyName, out var prop) && prop.ValueKind == JsonValueKind.Number && prop.TryGetInt64(out var value)
             ? value
             : null;
+
+    private static async Task HandleLitixAsync(NetworkRequestInfo? request, IStreamCaptureHost host)
+    {
+        var payload = request?.PostData;
+        if (string.IsNullOrWhiteSpace(payload))
+            return;
+
+        try
+        {
+            foreach (var beacon in EnumerateLitixBeacons(payload))
+            {
+                var trackName = GetJsonString(beacon, "vtt");
+                if (string.IsNullOrWhiteSpace(trackName))
+                    continue;
+
+                var stationName = GetJsonString(beacon, "vpd");
+                var durationMs = GetJsonInt64(beacon, "vdu");
+
+                host.MetadataTracker.UpdateFromArtistTrack(
+                    trackName,
+                    string.Empty,
+                    stationName: stationName,
+                    durationMs: durationMs,
+                    source: "litix");
+
+                Log.Debug("Litix now playing: {Track} on {Station}", trackName, stationName);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Error parsing Litix playback beacon");
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private static IEnumerable<JsonElement> EnumerateLitixBeacons(string payload)
+    {
+        JsonElement root;
+        try
+        {
+            root = JsonSerializer.Deserialize<JsonElement>(payload);
+        }
+        catch
+        {
+            yield break;
+        }
+
+        foreach (var element in WalkJsonTree(root))
+        {
+            if (element.ValueKind != JsonValueKind.Object)
+                continue;
+
+            if (element.TryGetProperty("vtt", out var titleProp) &&
+                titleProp.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(titleProp.GetString()))
+            {
+                yield return element;
+            }
+        }
+    }
+
+    private static IEnumerable<JsonElement> WalkJsonTree(JsonElement element)
+    {
+        yield return element;
+
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    foreach (var child in WalkJsonTree(property.Value))
+                        yield return child;
+                }
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    foreach (var child in WalkJsonTree(item))
+                        yield return child;
+                }
+                break;
+        }
+    }
+
+    private static void UpdateNowPlayingFromFirstStream(JsonElement streamsElement, IStreamCaptureHost host)
+    {
+        foreach (var stream in streamsElement.EnumerateArray())
+        {
+            if (!TryExtractArtistTrackFromStream(stream, out var trackName, out var artistName, out var stationName, out var albumName, out var durationMs, out var imageUrl))
+                continue;
+
+            host.MetadataTracker.UpdateFromArtistTrack(
+                trackName,
+                artistName ?? string.Empty,
+                stationName: stationName,
+                albumName: albumName,
+                durationMs: durationMs,
+                albumArtUrl: imageUrl,
+                source: "tuneSource");
+
+            Log.Information("Now playing from tuneSource: {Track} ({Artist}) on {Station}", trackName, artistName, stationName);
+            break;
+        }
+    }
+
+    private static bool TryExtractArtistTrackFromStream(
+        JsonElement stream,
+        out string trackName,
+        out string? artistName,
+        out string? stationName,
+        out string? albumName,
+        out long? durationMs,
+        out string? imageUrl)
+    {
+        trackName = string.Empty;
+        artistName = null;
+        stationName = null;
+        albumName = null;
+        durationMs = null;
+        imageUrl = null;
+
+        if (!stream.TryGetProperty("metadata", out var metadata))
+            return false;
+
+        if (!metadata.TryGetProperty("artist", out var artist))
+            return false;
+
+        stationName = GetJsonString(artist, "stationName");
+
+        if (!artist.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+            return false;
+
+        foreach (var item in items.EnumerateArray())
+        {
+            trackName = GetJsonString(item, "name") ?? string.Empty;
+            artistName = GetJsonString(item, "artistName");
+            albumName = GetJsonString(item, "albumName");
+            durationMs = GetJsonInt64(item, "duration");
+            imageUrl = ExtractPreferredImage(item, "images");
+            return !string.IsNullOrWhiteSpace(trackName);
+        }
+
+        return false;
+    }
+
+    private static void ProcessChannelLinearTuneSource(JsonElement jsonElement, IStreamCaptureHost host)
+    {
+        var channelId = GetJsonString(jsonElement, "id");
+        if (string.IsNullOrWhiteSpace(channelId))
+            return;
+
+        if (!jsonElement.TryGetProperty("metadata", out var metadata) ||
+            !metadata.TryGetProperty("live", out var live))
+        {
+            return;
+        }
+
+        var channelName = GetJsonString(live, "channelName") ?? "Live Channel";
+        var channelNumber = live.TryGetProperty("channelNumber", out var channelNumberProp) &&
+                            channelNumberProp.TryGetInt32(out var number)
+            ? number
+            : (int?)null;
+
+        var showName = ResolveCurrentLiveShowName(live);
+
+        host.LiveQueueTracker.SetActiveLiveChannel(channelId, channelName, channelNumber, showName);
+        host.MetadataTracker.UpdateStationName(channelName);
+
+        Log.Information("Live channel active: {Channel} (ch {Number}) show={Show}",
+            channelName, channelNumber, showName ?? "(unknown)");
+    }
+
+    private static string? ResolveCurrentLiveShowName(JsonElement live)
+    {
+        if (!live.TryGetProperty("episodes", out var episodes) || episodes.ValueKind != JsonValueKind.Array)
+            return null;
+
+        var now = DateTime.UtcNow;
+        string? fallback = null;
+
+        foreach (var episode in episodes.EnumerateArray())
+        {
+            var name = GetJsonString(episode, "showName") ?? GetJsonString(episode, "name");
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            fallback ??= name;
+
+            if (!episode.TryGetProperty("startTimestamp", out var startProp) ||
+                startProp.ValueKind != JsonValueKind.String ||
+                !DateTime.TryParse(startProp.GetString(), null, System.Globalization.DateTimeStyles.RoundtripKind, out var startUtc))
+            {
+                continue;
+            }
+
+            var durationMs = GetJsonInt64(episode, "duration") ?? 0;
+            var endUtc = durationMs > 0 ? startUtc.AddMilliseconds(durationMs) : startUtc.AddHours(5);
+
+            if (startUtc <= now && now < endUtc)
+                return name;
+        }
+
+        return fallback;
+    }
+
+    private static async Task HandleLookAroundAsync(string url, IStreamCaptureHost host)
+    {
+        try
+        {
+            host.LiveQueueTracker.LookAroundUrl = url;
+
+            var body = await FetchLookAroundBodyAsync(url);
+            if (string.IsNullOrWhiteSpace(body))
+                return;
+
+            var activeChannelId = host.LiveQueueTracker.ActiveChannel?.ChannelId;
+            if (string.IsNullOrWhiteSpace(activeChannelId))
+            {
+                host.LiveQueueTracker.SetPendingLookAroundBody(body);
+                Log.Debug("Buffered lookAround payload — waiting for active live channel");
+                return;
+            }
+
+            await ProcessLookAroundBodyAsync(body, activeChannelId, host);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error processing lookAround response");
+        }
+    }
+
+    private static async Task<string?> FetchLookAroundBodyAsync(string url)
+    {
+        using var httpClient = new HttpClient();
+        httpClient.DefaultRequestHeaders.Add("User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+
+        var response = await httpClient.GetAsync(url);
+        var body = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(body))
+        {
+            Log.Warning("lookAround fetch failed: {StatusCode}", response.StatusCode);
+            return null;
+        }
+
+        Directory.CreateDirectory("Stations");
+        await File.WriteAllTextAsync("Stations/lookaround.json", body);
+        return body;
+    }
+
+    private static async Task TryProcessPendingLookAroundAsync(IStreamCaptureHost host)
+    {
+        var pending = host.LiveQueueTracker.TakePendingLookAroundBody();
+        var activeChannelId = host.LiveQueueTracker.ActiveChannel?.ChannelId;
+        if (string.IsNullOrWhiteSpace(pending) || string.IsNullOrWhiteSpace(activeChannelId))
+            return;
+
+        await ProcessLookAroundBodyAsync(pending, activeChannelId, host);
+    }
+
+    private static async Task ProcessLookAroundBodyAsync(string body, string activeChannelId, IStreamCaptureHost host)
+    {
+        var root = JsonSerializer.Deserialize<JsonElement>(body);
+        if (root.TryGetProperty("delta", out var deltaProp))
+        {
+            var delta = deltaProp.GetString();
+            if (!string.IsNullOrWhiteSpace(delta))
+            {
+                host.LiveQueueTracker.LookAroundUrl =
+                    $"https://lookaround-cache-prod.streaming.siriusxm.com/playbackservices/v1/live/lookAround?delta={Uri.EscapeDataString(delta)}";
+            }
+        }
+
+        var channelMap = GetLookAroundChannelMap(root);
+
+        foreach (var channelProperty in channelMap.EnumerateObject())
+        {
+            if (channelProperty.Value.ValueKind != JsonValueKind.Object)
+                continue;
+
+            if (!string.Equals(channelProperty.Name, activeChannelId, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!channelProperty.Value.TryGetProperty("cuts", out var cutsElement) ||
+                cutsElement.ValueKind != JsonValueKind.Array)
+            {
+                Log.Debug("lookAround channel {ChannelId} has no cuts array", activeChannelId);
+                return;
+            }
+
+            var showName = ExtractLookAroundShowName(channelProperty.Value);
+            var cuts = ParseLookAroundCuts(cutsElement);
+
+            await host.RunOnUiAsync(() =>
+            {
+                host.LiveQueueTracker.MergeLookAroundCuts(activeChannelId, cuts, showName);
+
+                var nowPlaying = host.LiveQueueTracker.GetNowPlayingCut()
+                    ?? cuts.Where(c => !c.IsAd).OrderByDescending(c => c.ValidFromUtc).FirstOrDefault();
+
+                if (nowPlaying != null)
+                {
+                    host.MetadataTracker.UpdateFromArtistTrack(
+                        nowPlaying.TrackName,
+                        nowPlaying.ArtistName,
+                        stationName: host.LiveQueueTracker.ActiveChannel?.ChannelName,
+                        albumArtUrl: nowPlaying.ImageUrl,
+                        source: "lookAround");
+                }
+            });
+
+            Log.Information("lookAround merged {Count} cut(s) for {Channel} (up next: {UpNext})",
+                cuts.Count, activeChannelId, host.LiveQueueTracker.UpNextCount);
+            return;
+        }
+
+        Log.Debug("Active channel {ChannelId} not found in lookAround payload", activeChannelId);
+    }
+
+    private static JsonElement GetLookAroundChannelMap(JsonElement root)
+    {
+        if (root.TryGetProperty("channels", out var channels) && channels.ValueKind == JsonValueKind.Object)
+            return channels;
+
+        return root;
+    }
+
+    private static void TryActivateLiveChannelFromRequest(string? payload, IStreamCaptureHost host)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            return;
+
+        try
+        {
+            var json = JsonSerializer.Deserialize<JsonElement>(payload);
+            if (!string.Equals(GetJsonString(json, "type"), "channel-linear", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var channelId = GetJsonString(json, "id");
+            if (string.IsNullOrWhiteSpace(channelId))
+                return;
+
+            host.LiveQueueTracker.SetActiveLiveChannel(channelId, "Live Channel", null, null);
+            Log.Information("Live channel detected from tuneSource request: {ChannelId}", channelId);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Could not parse tuneSource request for live channel activation");
+        }
+    }
+
+    private static string? ExtractLookAroundShowName(JsonElement channelElement)
+    {
+        if (!channelElement.TryGetProperty("shows", out var shows) || shows.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var show in shows.EnumerateArray())
+        {
+            var name = GetJsonString(show, "name");
+            if (!string.IsNullOrWhiteSpace(name))
+                return name;
+        }
+
+        return null;
+    }
+
+    private static List<LiveCutEntry> ParseLookAroundCuts(JsonElement cutsElement)
+    {
+        var cuts = new List<LiveCutEntry>();
+
+        foreach (var cut in cutsElement.EnumerateArray())
+        {
+            var trackName = GetJsonString(cut, "name");
+            if (string.IsNullOrWhiteSpace(trackName))
+                continue;
+
+            var artistName = GetJsonString(cut, "artistName") ?? "Unknown";
+            var isAd = cut.TryGetProperty("isAd", out var isAdProp) && isAdProp.ValueKind == JsonValueKind.True;
+            var validFromUtc = ParseUtcTimestamp(GetJsonString(cut, "validFrom")) ?? DateTime.UtcNow;
+            string? imageUrl = null;
+
+            if (cut.TryGetProperty("image", out var image) &&
+                image.TryGetProperty("url", out var imageUrlProp))
+            {
+                imageUrl = StreamEntry.DecodeImageUrl(imageUrlProp.GetString());
+            }
+
+            cuts.Add(new LiveCutEntry
+            {
+                TrackName = trackName,
+                ArtistName = artistName,
+                ValidFromUtc = validFromUtc,
+                IsAd = isAd,
+                ImageUrl = imageUrl
+            });
+        }
+
+        return cuts;
+    }
+
+    private static DateTime? ParseUtcTimestamp(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return DateTime.TryParse(value, null, System.Globalization.DateTimeStyles.RoundtripKind, out var parsed)
+            ? parsed.ToUniversalTime()
+            : null;
+    }
+
+    public Task RefreshLiveLookAroundAsync(IStreamCaptureHost host)
+    {
+        if (!host.IsMonitoring || !host.LiveQueueTracker.IsLiveActive)
+            return Task.CompletedTask;
+
+        var url = host.LiveQueueTracker.LookAroundUrl;
+        if (string.IsNullOrWhiteSpace(url))
+            return Task.CompletedTask;
+
+        return HandleLookAroundAsync(url, host);
+    }
 }

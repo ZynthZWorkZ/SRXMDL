@@ -710,6 +710,8 @@
                                         <StackPanel Orientation="Horizontal">
                                             <Button x:Name="StreamsTabButton" Content="Stream Activity" Click="StreamsTabButton_Click"
                                                     Style="{StaticResource SegmentedTabButton}"/>
+                                            <Button x:Name="WhatsNextTabButton" Content="What's Next" Click="WhatsNextTabButton_Click"
+                                                    Style="{StaticResource SegmentedTabButton}"/>
                                             <Button x:Name="ArtistsTabButton" Content="Artists" Click="ArtistsTabButton_Click"
                                                     Style="{StaticResource SegmentedTabButton}"/>
                                         </StackPanel>
@@ -824,6 +826,116 @@
                                         </GridView>
                                     </ListView.View>
                                 </ListView>
+
+                                <Grid x:Name="WhatsNextPanel" Visibility="Collapsed">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Border Grid.Row="0" Margin="14,14,14,8" Padding="14,12"
+                                            Background="{StaticResource SurfaceRaised}"
+                                            BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1"
+                                            CornerRadius="12">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border Background="#FF3B30" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
+                                                    <TextBlock Text="LIVE" Foreground="White" FontSize="9" FontWeight="Bold"/>
+                                                </Border>
+                                                <TextBlock x:Name="WhatsNextChannelText"
+                                                         Text="No live channel"
+                                                         Foreground="{StaticResource TextPrimary}"
+                                                         FontSize="12" FontWeight="SemiBold"/>
+                                            </StackPanel>
+                                            <TextBlock x:Name="WhatsNextShowText"
+                                                     Text="Tune a live radio station to see upcoming songs"
+                                                     Foreground="{StaticResource TextSecondary}"
+                                                     FontSize="10" Margin="0,6,0,0"
+                                                     TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <ListView x:Name="WhatsNextListView"
+                                              Grid.Row="1"
+                                              Style="{StaticResource ModernListView}"
+                                              ItemContainerStyle="{StaticResource ListRowItemStyle}"
+                                              Padding="14,0,14,14">
+                                        <ListView.View>
+                                            <GridView ColumnHeaderContainerStyle="{StaticResource ListColumnHeaderStyle}">
+                                                <GridViewColumn Header="Status" Width="72">
+                                                    <GridViewColumn.CellTemplate>
+                                                        <DataTemplate>
+                                                            <Border CornerRadius="8" Padding="8,4" HorizontalAlignment="Left">
+                                                                <Border.Style>
+                                                                    <Style TargetType="Border">
+                                                                        <Setter Property="Background" Value="#1A2433"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding Position}" Value="NowPlaying">
+                                                                                <Setter Property="Background" Value="{StaticResource AccentBlueDeep}"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Border.Style>
+                                                                <TextBlock Text="{Binding StatusLabel}"
+                                                                           Foreground="{StaticResource AccentBlue}"
+                                                                           FontSize="9" FontWeight="Bold">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Foreground" Value="{StaticResource AccentBlue}"/>
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding Position}" Value="NowPlaying">
+                                                                                    <Setter Property="Foreground" Value="White"/>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </GridViewColumn.CellTemplate>
+                                                </GridViewColumn>
+                                                <GridViewColumn Header="Track" Width="260">
+                                                    <GridViewColumn.CellTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding TrackName}"
+                                                                           Foreground="{StaticResource TextPrimary}"
+                                                                           FontSize="12" FontWeight="SemiBold"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                                <TextBlock Text="{Binding ArtistName}"
+                                                                           Foreground="{StaticResource TextSecondary}"
+                                                                           FontSize="10"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </GridViewColumn.CellTemplate>
+                                                </GridViewColumn>
+                                                <GridViewColumn Header="Since" Width="80">
+                                                    <GridViewColumn.CellTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding ValidFromLocal}"
+                                                                       Foreground="{StaticResource TextMuted}"
+                                                                       FontFamily="Consolas" FontSize="10"/>
+                                                        </DataTemplate>
+                                                    </GridViewColumn.CellTemplate>
+                                                </GridViewColumn>
+                                            </GridView>
+                                        </ListView.View>
+                                    </ListView>
+
+                                    <Border Grid.Row="1" x:Name="WhatsNextEmptyState"
+                                            Background="Transparent" Visibility="Collapsed">
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20">
+                                            <TextBlock Text="📻" FontSize="28" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                                            <TextBlock Text="Waiting for live queue data..."
+                                                       Foreground="{StaticResource TextSecondary}"
+                                                       FontSize="12" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Monitoring must be ON · lookAround polls ~every 30s"
+                                                       Foreground="{StaticResource TextMuted}"
+                                                       FontSize="10" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
 
                                 <ScrollViewer x:Name="ArtistsPanel" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
                                     <ListView x:Name="ArtistListView" 

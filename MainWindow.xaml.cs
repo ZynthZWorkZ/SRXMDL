@@ -27,6 +27,13 @@ namespace SRXMDL;
 
 public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyChanged
 {
+    private enum FeaturePanel
+    {
+        Streams,
+        WhatsNext,
+        Artists
+    }
+
     private const double BaseWidth = 1600;
     private const double BaseHeight = 920;
     private const double MinScale = 0.75;
@@ -37,7 +44,10 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     private readonly ObservableCollection<ArtistEntry> _artistEntries;
     private readonly StreamNetworkProcessor _streamProcessor = new();
     private readonly WebViewPlaybackService _playbackService = new();
+    private readonly PlaybackMetadataTracker _metadataTracker = new();
+    private readonly LiveQueueTracker _liveQueueTracker = new();
     private readonly DispatcherTimer _nowPlayingTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer _liveQueueRefreshTimer = new() { Interval = TimeSpan.FromSeconds(30) };
 
     private WebViewSessionService? _sessionService;
     private WebViewNetworkMonitor? _networkMonitor;
@@ -50,7 +60,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     private bool _isPaused;
     private bool _captureBearer;
     private bool _autoLoginStarted;
-    private bool _showingArtists;
+    private FeaturePanel _activePanel = FeaturePanel.Streams;
     private bool _webExpanded;
     private GridLength _savedPlayerColumnWidth = new(1, GridUnitType.Star);
     private GridLength _savedFeatureColumnWidth = new(1, GridUnitType.Star);
@@ -65,11 +75,14 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         _artistEntries = new ObservableCollection<ArtistEntry>();
         StreamListView.ItemsSource = _streamEntries;
         ArtistListView.ItemsSource = _artistEntries;
+        WhatsNextListView.ItemsSource = _liveQueueTracker.DisplayEntries;
+        _liveQueueTracker.Changed += OnLiveQueueChanged;
 
         AttemptAutoLoginWithCredsAsync = HandleAutoLoginAsync;
 
         SetupLogging();
         _nowPlayingTimer.Tick += async (_, _) => await UpdateNowPlayingAsync();
+        _liveQueueRefreshTimer.Tick += async (_, _) => await RefreshLiveQueueAsync();
         SetupStationFeedbackWatcher();
         UpdateResponsiveLayout();
         SetTabState();
@@ -80,6 +93,10 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     public Dispatcher UiDispatcher => Dispatcher;
 
     public ObservableCollection<StreamEntry> StreamEntries => _streamEntries;
+
+    public PlaybackMetadataTracker MetadataTracker => _metadataTracker;
+
+    public LiveQueueTracker LiveQueueTracker => _liveQueueTracker;
 
     public string? LastTuneSourceUrl { get; set; }
     public string? LastTuneSourcePayload { get; set; }
@@ -398,36 +415,119 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
 
     private void StreamsTabButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!_showingArtists)
+        if (_activePanel == FeaturePanel.Streams)
             return;
 
-        _showingArtists = false;
+        _activePanel = FeaturePanel.Streams;
         SetTabState();
+    }
+
+    private void WhatsNextTabButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activePanel == FeaturePanel.WhatsNext)
+            return;
+
+        _activePanel = FeaturePanel.WhatsNext;
+        SetTabState();
+        RefreshWhatsNextHeader();
+        _ = RefreshLiveQueueAsync();
+    }
+
+    private void OnLiveQueueChanged()
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            RefreshWhatsNextHeader();
+            UpdateLiveQueueRefreshTimer();
+        });
+    }
+
+    private void UpdateLiveQueueRefreshTimer()
+    {
+        if (IsMonitoring && _liveQueueTracker.IsLiveActive)
+            _liveQueueRefreshTimer.Start();
+        else
+            _liveQueueRefreshTimer.Stop();
+    }
+
+    private async Task RefreshLiveQueueAsync()
+    {
+        if (!IsMonitoring || !_liveQueueTracker.IsLiveActive)
+            return;
+
+        _liveQueueTracker.RefreshPositions();
+
+        try
+        {
+            await _streamProcessor.RefreshLiveLookAroundAsync(this);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Live queue lookAround refresh failed");
+        }
     }
 
     private void ArtistsTabButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_showingArtists)
+        if (_activePanel == FeaturePanel.Artists)
             return;
 
-        _showingArtists = true;
+        _activePanel = FeaturePanel.Artists;
         SetTabState();
     }
 
     private void SetTabState()
     {
-        StreamListView.Visibility = _showingArtists ? Visibility.Collapsed : Visibility.Visible;
-        ArtistsPanel.Visibility = _showingArtists ? Visibility.Visible : Visibility.Collapsed;
-        ClearStreamsButton.Visibility = _showingArtists ? Visibility.Collapsed : Visibility.Visible;
+        StreamListView.Visibility = _activePanel == FeaturePanel.Streams ? Visibility.Visible : Visibility.Collapsed;
+        WhatsNextPanel.Visibility = _activePanel == FeaturePanel.WhatsNext ? Visibility.Visible : Visibility.Collapsed;
+        ArtistsPanel.Visibility = _activePanel == FeaturePanel.Artists ? Visibility.Visible : Visibility.Collapsed;
+        ClearStreamsButton.Visibility = _activePanel == FeaturePanel.Streams ? Visibility.Visible : Visibility.Collapsed;
 
         var accentBlue = (Brush)FindResource("AccentBlue");
         var textSecondary = (Brush)FindResource("TextSecondary");
 
-        StreamsTabButton.Background = _showingArtists ? Brushes.Transparent : accentBlue;
-        StreamsTabButton.Foreground = _showingArtists ? textSecondary : Brushes.White;
+        StreamsTabButton.Background = _activePanel == FeaturePanel.Streams ? accentBlue : Brushes.Transparent;
+        StreamsTabButton.Foreground = _activePanel == FeaturePanel.Streams ? Brushes.White : textSecondary;
 
-        ArtistsTabButton.Background = _showingArtists ? accentBlue : Brushes.Transparent;
-        ArtistsTabButton.Foreground = _showingArtists ? Brushes.White : textSecondary;
+        WhatsNextTabButton.Background = _activePanel == FeaturePanel.WhatsNext ? accentBlue : Brushes.Transparent;
+        WhatsNextTabButton.Foreground = _activePanel == FeaturePanel.WhatsNext ? Brushes.White : textSecondary;
+
+        ArtistsTabButton.Background = _activePanel == FeaturePanel.Artists ? accentBlue : Brushes.Transparent;
+        ArtistsTabButton.Foreground = _activePanel == FeaturePanel.Artists ? Brushes.White : textSecondary;
+    }
+
+    private void RefreshWhatsNextHeader()
+    {
+        var channel = _liveQueueTracker.ActiveChannel;
+        if (channel == null)
+        {
+            WhatsNextChannelText.Text = "No live channel";
+            WhatsNextShowText.Text = IsMonitoring
+                ? "Tune a live radio station (e.g. Hip-Hop Nation, The Heat) — queue updates every ~30s"
+                : "Start monitoring, then tune a live radio station";
+            WhatsNextEmptyState.Visibility = Visibility.Visible;
+            WhatsNextListView.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var channelLabel = channel.ChannelNumber is > 0
+            ? $"{channel.ChannelName} · Ch {channel.ChannelNumber}"
+            : channel.ChannelName;
+
+        WhatsNextChannelText.Text = channelLabel;
+
+        var upNext = _liveQueueTracker.UpNextCount;
+        var queueHint = upNext > 0
+            ? $"{upNext} track{(upNext == 1 ? "" : "s")} up next · refreshes every ~30s"
+            : "Live queue updates from lookAround (~30s)";
+
+        WhatsNextShowText.Text = string.IsNullOrWhiteSpace(channel.ShowName)
+            ? queueHint
+            : $"Show: {channel.ShowName} · {queueHint}";
+
+        var hasEntries = _liveQueueTracker.DisplayEntries.Count > 0;
+        WhatsNextEmptyState.Visibility = hasEntries ? Visibility.Collapsed : Visibility.Visible;
+        WhatsNextListView.Visibility = hasEntries ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -565,6 +665,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
                     blinkAnimation.Begin(StatusIndicator);
 
                 _nowPlayingTimer.Start();
+                UpdateLiveQueueRefreshTimer();
             }
             else
             {
@@ -582,6 +683,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
                 StatusIndicator.Opacity = 1;
 
                 _nowPlayingTimer.Stop();
+                _liveQueueRefreshTimer.Stop();
                 _isPaused = false;
                 ResetPauseButtonIcons();
 
@@ -591,6 +693,8 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
                 NowPlayingMeta.Text = string.Empty;
                 NowPlayingMeta.Visibility = Visibility.Collapsed;
                 _currentTrack = new NowPlaying();
+                _metadataTracker.Reset();
+                _liveQueueTracker.Clear();
             }
         });
     }
@@ -603,8 +707,19 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
 
         try
         {
-            var playing = await _playbackService.GetNowPlayingAsync(core);
+            if (_liveQueueTracker.IsLiveActive)
+                _liveQueueTracker.RefreshPositions();
+
+            var playing = _metadataTracker.HasRecentMetadata(TimeSpan.FromMinutes(30))
+                ? _metadataTracker.Snapshot()
+                : new NowPlaying();
+
+            var domPlaying = await _playbackService.GetNowPlayingAsync(core);
+            MergeDomNowPlayingFallback(playing, domPlaying);
             EnrichNowPlayingFromCapturedMetadata(playing);
+
+            if (IsEmptyNowPlaying(playing))
+                return;
 
             if (playing.TrackName == _currentTrack.TrackName &&
                 playing.StationName == _currentTrack.StationName &&
@@ -615,66 +730,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
                 return;
             }
 
-            await Dispatcher.InvokeAsync(() =>
-            {
-                if (playing.TrackName != _currentTrack.TrackName)
-                {
-                    _currentTrack.TrackName = playing.TrackName;
-                    NowPlayingTrack.Text = playing.TrackName;
-                    Log.Debug("Updated track name to: {TrackName}", playing.TrackName);
-                }
-
-                if (playing.StationName != _currentTrack.StationName)
-                {
-                    _currentTrack.StationName = playing.StationName;
-                    NowPlayingStation.Text = playing.StationName;
-                    Log.Debug("Updated station name to: {StationName}", playing.StationName);
-                }
-
-                if (playing.AlbumName != _currentTrack.AlbumName || playing.DurationMs != _currentTrack.DurationMs)
-                {
-                    _currentTrack.AlbumName = playing.AlbumName;
-                    _currentTrack.DurationMs = playing.DurationMs;
-
-                    var metaParts = new List<string>();
-                    if (!string.IsNullOrWhiteSpace(playing.AlbumName))
-                        metaParts.Add(playing.AlbumName);
-                    if (!string.IsNullOrEmpty(playing.DurationFormatted))
-                        metaParts.Add(playing.DurationFormatted);
-
-                    if (metaParts.Count > 0)
-                    {
-                        NowPlayingMeta.Text = string.Join(" · ", metaParts);
-                        NowPlayingMeta.Visibility = Visibility.Visible;
-                    }
-                    else
-                    {
-                        NowPlayingMeta.Text = string.Empty;
-                        NowPlayingMeta.Visibility = Visibility.Collapsed;
-                    }
-                }
-
-                if (playing.AlbumArtUrl != _currentTrack.AlbumArtUrl)
-                {
-                    _currentTrack.AlbumArtUrl = playing.AlbumArtUrl;
-                    if (!string.IsNullOrEmpty(playing.AlbumArtUrl))
-                    {
-                        try
-                        {
-                            NowPlayingArt.Source = new BitmapImage(new Uri(playing.AlbumArtUrl));
-                            Log.Debug("Updated album art image");
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error(ex, "Error loading album art image from URL: {Url}", playing.AlbumArtUrl);
-                        }
-                    }
-                    else
-                    {
-                        NowPlayingArt.Source = null;
-                    }
-                }
-            });
+            await Dispatcher.InvokeAsync(() => ApplyNowPlayingToUi(playing));
         }
         catch (Exception ex)
         {
@@ -682,22 +738,131 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         }
     }
 
+    private static bool IsEmptyTrackName(string? trackName) =>
+        string.IsNullOrWhiteSpace(trackName) ||
+        trackName == "No track playing";
+
+    private static bool IsEmptyNowPlaying(NowPlaying playing) =>
+        IsEmptyTrackName(playing.TrackName);
+
+    private static void MergeDomNowPlayingFallback(NowPlaying playing, NowPlaying domPlaying)
+    {
+        if (IsEmptyNowPlaying(playing) && !IsEmptyNowPlaying(domPlaying))
+            playing.TrackName = domPlaying.TrackName;
+
+        if (string.IsNullOrWhiteSpace(playing.StationName) ||
+            playing.StationName == "No station selected")
+        {
+            if (!string.IsNullOrWhiteSpace(domPlaying.StationName) &&
+                domPlaying.StationName != "No station selected")
+            {
+                playing.StationName = domPlaying.StationName;
+            }
+        }
+
+        if (string.IsNullOrEmpty(playing.AlbumArtUrl) && !string.IsNullOrEmpty(domPlaying.AlbumArtUrl))
+            playing.AlbumArtUrl = domPlaying.AlbumArtUrl;
+    }
+
+    private void ApplyNowPlayingToUi(NowPlaying playing)
+    {
+        if (playing.TrackName != _currentTrack.TrackName)
+        {
+            _currentTrack.TrackName = playing.TrackName;
+            NowPlayingTrack.Text = playing.TrackName;
+            Log.Debug("Updated track name to: {TrackName}", playing.TrackName);
+        }
+
+        if (playing.StationName != _currentTrack.StationName)
+        {
+            _currentTrack.StationName = playing.StationName;
+            NowPlayingStation.Text = playing.StationName;
+            Log.Debug("Updated station name to: {StationName}", playing.StationName);
+        }
+
+        if (playing.AlbumName != _currentTrack.AlbumName || playing.DurationMs != _currentTrack.DurationMs)
+        {
+            _currentTrack.AlbumName = playing.AlbumName;
+            _currentTrack.DurationMs = playing.DurationMs;
+
+            var metaParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(playing.AlbumName))
+                metaParts.Add(playing.AlbumName);
+            if (!string.IsNullOrEmpty(playing.DurationFormatted))
+                metaParts.Add(playing.DurationFormatted);
+
+            if (metaParts.Count > 0)
+            {
+                NowPlayingMeta.Text = string.Join(" · ", metaParts);
+                NowPlayingMeta.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                NowPlayingMeta.Text = string.Empty;
+                NowPlayingMeta.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        if (playing.AlbumArtUrl != _currentTrack.AlbumArtUrl)
+        {
+            _currentTrack.AlbumArtUrl = playing.AlbumArtUrl;
+            if (!string.IsNullOrEmpty(playing.AlbumArtUrl))
+            {
+                try
+                {
+                    NowPlayingArt.Source = new BitmapImage(new Uri(playing.AlbumArtUrl));
+                    Log.Debug("Updated album art image");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Error loading album art image from URL: {Url}", playing.AlbumArtUrl);
+                }
+            }
+            else
+            {
+                NowPlayingArt.Source = null;
+            }
+        }
+    }
+
     /// <summary>
-    /// The DOM-scraped now-playing title/art is fragile and lacks album/duration data.
-    /// Cross-reference it against the rich metadata already captured from the
-    /// tuneSource/peek API responses (see StreamNetworkProcessor) to fill the gaps
-    /// and prefer the higher-resolution API artwork when the page hasn't rendered any.
+    /// Fill gaps from captured tuneSource/peek stream entries. Works even when the
+    /// mobile player hides title/station text in the DOM.
     /// </summary>
     private void EnrichNowPlayingFromCapturedMetadata(NowPlaying playing)
     {
-        if (string.IsNullOrWhiteSpace(playing.TrackName) || playing.TrackName == "No track playing")
-            return;
+        StreamEntry? match = null;
 
-        var match = StreamEntries.LastOrDefault(e =>
-            string.Equals(e.TrackName, playing.TrackName, StringComparison.OrdinalIgnoreCase));
+        if (!IsEmptyTrackName(playing.TrackName))
+        {
+            match = StreamEntries.LastOrDefault(e =>
+                string.Equals(e.TrackName, playing.TrackName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        match ??= StreamEntries.LastOrDefault(e =>
+            !string.IsNullOrWhiteSpace(e.TrackName) &&
+            e.TrackName is not ("Unnamed MP4" or "Unnamed MP3" or "Unnamed M3U8"));
 
         if (match == null)
             return;
+
+        if (IsEmptyTrackName(playing.TrackName))
+            playing.TrackName = match.TrackName;
+
+        if (string.IsNullOrWhiteSpace(playing.StationName) ||
+            playing.StationName == "No station selected")
+        {
+            var trackerStation = _metadataTracker.Snapshot().StationName;
+            if (!string.IsNullOrWhiteSpace(trackerStation) &&
+                trackerStation != "No station selected")
+            {
+                playing.StationName = trackerStation;
+            }
+            else if (!string.IsNullOrWhiteSpace(match.ArtistName))
+            {
+                playing.StationName = match.ArtistName;
+            }
+        }
 
         playing.AlbumName ??= match.AlbumName;
         playing.DurationMs ??= match.DurationMs;

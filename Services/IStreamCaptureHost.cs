@@ -20,4 +20,6 @@ public interface IStreamCaptureHost
     string? LastTuneSourceAuthToken { get; set; }
     bool CaptureBearer { get; set; }
     Func<string, Task>? AttemptAutoLoginWithCredsAsync { get; set; }
+    PlaybackMetadataTracker MetadataTracker { get; }
+    LiveQueueTracker LiveQueueTracker { get; }
 }

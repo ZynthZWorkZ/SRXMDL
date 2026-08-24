@@ -13,13 +13,42 @@ public sealed class WebViewPlaybackService
     {
         const string script = """
             (function() {
-                var track = document.querySelector('div.styles-module__title___D3wQt');
-                var station = document.querySelector('div.styles-module__text___xT9yv span');
-                var art = document.querySelector('div.styles-module__imageContainer___b-ipU img');
+                function text(el) {
+                    return el && el.textContent ? el.textContent.trim() : '';
+                }
+
+                var titleEl = document.querySelector('[data-qa="mediaPlayer-track-metadata-title"]');
+                var stationEl = document.querySelector('[data-qa="mediaPlayer-track-metadata-top"]');
+                var artEl = document.querySelector('[data-qa="mediaPlayer-track-image"] img');
+
+                var trackName = text(titleEl);
+                var stationName = text(stationEl);
+                var albumArtUrl = artEl ? (artEl.src || '') : '';
+
+                // Mobile hides title/station text; album art alt still carries track info.
+                if (!trackName && artEl && artEl.alt) {
+                    trackName = artEl.alt.trim();
+                }
+
+                // Legacy desktop selectors (older builds).
+                if (!trackName) {
+                    trackName = text(document.querySelector('div.styles-module__title___D3wQt'));
+                }
+                if (!stationName) {
+                    stationName = text(document.querySelector('div.styles-module__text___xT9yv span'));
+                }
+                if (!albumArtUrl) {
+                    var legacyArt = document.querySelector('div.styles-module__imageContainer___b-ipU img');
+                    albumArtUrl = legacyArt ? (legacyArt.src || '') : '';
+                    if (!trackName && legacyArt && legacyArt.alt) {
+                        trackName = legacyArt.alt.trim();
+                    }
+                }
+
                 return JSON.stringify({
-                    trackName: track ? track.textContent.trim() : '',
-                    stationName: station ? station.textContent.trim() : '',
-                    albumArtUrl: art ? art.src : ''
+                    trackName: trackName,
+                    stationName: stationName,
+                    albumArtUrl: albumArtUrl
                 });
             })();
             """;
