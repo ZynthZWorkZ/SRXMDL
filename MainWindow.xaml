@@ -49,6 +49,18 @@
         <SolidColorBrush x:Key="AccentRed" Color="#FF453A"/>
         <SolidColorBrush x:Key="AccentAmber" Color="#FFD60A"/>
 
+        <!-- ================= Lyrics: Poppins font family (embedded) ================= -->
+        <FontFamily x:Key="PoppinsRegular">/SRXMDL;component/Fonts/Poppins-Regular.ttf</FontFamily>
+        <FontFamily x:Key="PoppinsMedium">/SRXMDL;component/Fonts/Poppins-Medium.ttf</FontFamily>
+        <FontFamily x:Key="PoppinsSemiBold">/SRXMDL;component/Fonts/Poppins-SemiBold.ttf</FontFamily>
+        <FontFamily x:Key="PoppinsBold">/SRXMDL;component/Fonts/Poppins-Bold.ttf</FontFamily>
+        <FontFamily x:Key="PoppinsExtraBold">/SRXMDL;component/Fonts/Poppins-ExtraBold.ttf</FontFamily>
+
+        <LinearGradientBrush x:Key="LyricsHeaderGradient" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#1E2A5C" Offset="0"/>
+            <GradientStop Color="#0B4C8C" Offset="1"/>
+        </LinearGradientBrush>
+
         <LinearGradientBrush x:Key="CardGradient" StartPoint="0,0" EndPoint="1,1">
             <GradientStop Color="#151822" Offset="0"/>
             <GradientStop Color="#0F1116" Offset="1"/>
@@ -714,6 +726,9 @@
                                                     Style="{StaticResource SegmentedTabButton}"/>
                                             <Button x:Name="ArtistsTabButton" Content="Artists" Click="ArtistsTabButton_Click"
                                                     Style="{StaticResource SegmentedTabButton}"/>
+                                            <Button x:Name="LyricsTabButton" Content="Lyrics" Click="LyricsTabButton_Click"
+                                                    Style="{StaticResource SegmentedTabButton}"
+                                                    Visibility="Collapsed"/>
                                         </StackPanel>
                                     </Border>
                                     <Button x:Name="ClearStreamsButton" Grid.Column="1" Content="Clear All" Click="ClearStreams_Click"
@@ -1034,6 +1049,137 @@
                                         </ListView.ItemTemplate>
                                     </ListView>
                                 </ScrollViewer>
+
+                                <!-- Lyrics view -->
+                                <Grid x:Name="LyricsPanel" Visibility="Collapsed">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Now-playing header -->
+                                    <Border Grid.Row="0" Margin="14,14,14,10" Padding="16,14"
+                                            CornerRadius="16" Background="{StaticResource LyricsHeaderGradient}">
+                                        <Border.Effect>
+                                            <DropShadowEffect Color="#0A84FF" Opacity="0.25" BlurRadius="20" ShadowDepth="0"/>
+                                        </Border.Effect>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <Border Grid.Column="0" Width="54" Height="54" CornerRadius="12" ClipToBounds="True" Margin="0,0,14,0">
+                                                <Grid>
+                                                    <Image x:Name="LyricsAlbumArt" Stretch="UniformToFill"/>
+                                                    <Border Background="#22273A"
+                                                            Visibility="{Binding ElementName=LyricsAlbumArt, Path=Source, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}">
+                                                        <TextBlock Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets" FontSize="20"
+                                                                   Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock Text="NOW PLAYING LYRICS" Foreground="#9DB8E8" FontSize="9"
+                                                           FontFamily="{StaticResource PoppinsSemiBold}" Margin="0,0,0,3"/>
+                                                <TextBlock x:Name="LyricsTrackNameText" Text="Track Name"
+                                                           Foreground="White" FontSize="17"
+                                                           FontFamily="{StaticResource PoppinsSemiBold}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock x:Name="LyricsArtistNameText" Text="Station Name"
+                                                           Foreground="#C7D2FE" FontSize="12"
+                                                           FontFamily="{StaticResource PoppinsRegular}"
+                                                           TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Lyrics content -->
+                                    <Border Grid.Row="1" Margin="14,0,14,14" CornerRadius="16"
+                                            Background="{StaticResource SurfaceRaised}"
+                                            BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1">
+                                        <Grid>
+                                            <!-- Live radio: offer next track without interrupting current lyrics -->
+                                            <Border x:Name="LiveLyricsNextTrackBanner"
+                                                    VerticalAlignment="Top" HorizontalAlignment="Stretch"
+                                                    Margin="16,12,16,0" Padding="12,10"
+                                                    CornerRadius="10"
+                                                    Background="#1A2744"
+                                                    BorderBrush="{StaticResource AccentBlue}" BorderThickness="1"
+                                                    Visibility="Collapsed"
+                                                    Panel.ZIndex="10">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,10,0">
+                                                        <TextBlock Text="LYRICS READY FOR NEXT TRACK"
+                                                                   FontSize="9" Foreground="#9DB8E8"
+                                                                   FontFamily="{StaticResource PoppinsSemiBold}"/>
+                                                        <TextBlock x:Name="LiveLyricsNextTrackText"
+                                                                   Text="Artist — Track"
+                                                                   FontSize="12" Foreground="White"
+                                                                   FontFamily="{StaticResource PoppinsMedium}"
+                                                                   TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" x:Name="LiveLyricsNextTrackButton"
+                                                            Content="View lyrics"
+                                                            Click="LiveLyricsNextTrackButton_Click"
+                                                            Style="{StaticResource PrimaryButton}"
+                                                            Padding="12,6" FontSize="11"/>
+                                                </Grid>
+                                            </Border>
+
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                <TextBlock x:Name="LyricsBodyText"
+                                                           Text=""
+                                                           Margin="30,28,30,28"
+                                                           FontFamily="{StaticResource PoppinsMedium}"
+                                                           FontSize="16.5"
+                                                           LineHeight="30"
+                                                           TextWrapping="Wrap"
+                                                           TextAlignment="Center"
+                                                           Foreground="{StaticResource TextPrimary}"/>
+                                            </ScrollViewer>
+
+                                            <!-- Loading state -->
+                                            <StackPanel x:Name="LyricsLoadingState"
+                                                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                        Visibility="Collapsed">
+                                                <TextBlock x:Name="LyricsLoadingIcon" Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="34" Foreground="{StaticResource AccentBlue}"
+                                                           HorizontalAlignment="Center" Margin="0,0,0,14">
+                                                    <TextBlock.Triggers>
+                                                        <EventTrigger RoutedEvent="TextBlock.Loaded">
+                                                            <BeginStoryboard Storyboard="{StaticResource BlinkAnimation}"/>
+                                                        </EventTrigger>
+                                                    </TextBlock.Triggers>
+                                                </TextBlock>
+                                                <TextBlock Text="Fetching lyrics..."
+                                                           FontFamily="{StaticResource PoppinsMedium}" FontSize="14"
+                                                           Foreground="{StaticResource TextSecondary}"
+                                                           HorizontalAlignment="Center"/>
+                                            </StackPanel>
+
+                                            <!-- Empty / error state -->
+                                            <StackPanel x:Name="LyricsEmptyState"
+                                                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                        Margin="30" Visibility="Collapsed">
+                                                <TextBlock Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets" FontSize="30"
+                                                           Foreground="{StaticResource TextMuted}"
+                                                           HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                                                <TextBlock x:Name="LyricsEmptyStateText"
+                                                           Text="No lyrics found"
+                                                           FontFamily="{StaticResource PoppinsSemiBold}" FontSize="14"
+                                                           Foreground="{StaticResource TextSecondary}"
+                                                           HorizontalAlignment="Center" TextAlignment="Center"
+                                                           TextWrapping="Wrap" MaxWidth="320"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
                             </Grid>
 
                             <!-- Now Playing footer -->

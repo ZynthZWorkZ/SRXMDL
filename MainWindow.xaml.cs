@@ -31,7 +31,8 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     {
         Streams,
         WhatsNext,
-        Artists
+        Artists,
+        Lyrics
     }
 
     private const double BaseWidth = 1600;
@@ -56,11 +57,22 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     private FileSystemWatcher? _stationFeedbackWatcher;
 
     private NowPlaying _currentTrack = new();
+    /// <summary>Album art URL read from the WebView player DOM — matches the in-browser thumbnail.</summary>
+    private string? _browserAlbumArtUrl;
     private bool _isMonitoring;
     private bool _isPaused;
     private bool _captureBearer;
     private bool _autoLoginStarted;
     private FeaturePanel _activePanel = FeaturePanel.Streams;
+    private int _lyricsFetchToken;
+    private string? _lyricsFetchedForTrack;
+    private string? _lyricsDisplayedKey;
+    private string? _lyricsDisplayedTrackName;
+    private string? _lyricsDisplayedArtist;
+    private string? _lyricsDisplayedArtUrl;
+    private LiveCutEntry? _pendingLiveLyricsCut;
+    private string? _lastLiveNowPlayingKey;
+    private System.Diagnostics.Process? _activeLyricsProcess;
     private bool _webExpanded;
     private GridLength _savedPlayerColumnWidth = new(1, GridUnitType.Star);
     private GridLength _savedFeatureColumnWidth = new(1, GridUnitType.Star);
@@ -439,6 +451,21 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         {
             RefreshWhatsNextHeader();
             UpdateLiveQueueRefreshTimer();
+
+            if (!_liveQueueTracker.IsLiveActive)
+            {
+                _lastLiveNowPlayingKey = null;
+                ClearLiveLyricsNextTrackOffer();
+                return;
+            }
+
+            var liveKey = BuildLiveNowPlayingKey(_liveQueueTracker.GetNowPlayingCut());
+            if (liveKey == _lastLiveNowPlayingKey)
+                return;
+
+            _lastLiveNowPlayingKey = liveKey;
+            Log.Information("Live radio now playing changed — {LiveKey}", liveKey ?? "(none)");
+            _ = ApplyLiveRadioNowPlayingAsync();
         });
     }
 
@@ -476,11 +503,50 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         SetTabState();
     }
 
+    private void LyricsTabButton_Click(object sender, RoutedEventArgs e)
+    {
+        var wasAlreadyOnLyrics = _activePanel == FeaturePanel.Lyrics;
+
+        _activePanel = FeaturePanel.Lyrics;
+        SetTabState();
+
+        if (wasAlreadyOnLyrics)
+            return;
+
+        // The now-playing track may have changed while this tab wasn't visible
+        // (auto-refresh only fires while the Lyrics panel is the active one),
+        // so catch up here instead of showing stale lyrics until manually reopened.
+        if (_liveQueueTracker.IsLiveActive &&
+            !string.IsNullOrEmpty(_lyricsDisplayedKey) &&
+            !string.IsNullOrEmpty(_lyricsFetchedForTrack))
+        {
+            TryOfferLiveNextTrackLyrics();
+            UpdateLiveLyricsHeaderForPinnedTrack();
+        }
+        else if (_lyricsFetchedForTrack != GetActiveLyricsTrackKey())
+            _ = FetchAndDisplayLyricsAsync();
+        else
+            SyncLyricsHeaderFromNowPlaying();
+    }
+
+    private string? GetActiveLyricsTrackKey()
+    {
+        if (_liveQueueTracker.IsLiveActive)
+        {
+            var cut = _liveQueueTracker.GetNowPlayingCut();
+            if (cut != null && !string.IsNullOrWhiteSpace(cut.TrackName))
+                return cut.TrackName.Trim();
+        }
+
+        return _currentTrack.TrackName;
+    }
+
     private void SetTabState()
     {
         StreamListView.Visibility = _activePanel == FeaturePanel.Streams ? Visibility.Visible : Visibility.Collapsed;
         WhatsNextPanel.Visibility = _activePanel == FeaturePanel.WhatsNext ? Visibility.Visible : Visibility.Collapsed;
         ArtistsPanel.Visibility = _activePanel == FeaturePanel.Artists ? Visibility.Visible : Visibility.Collapsed;
+        LyricsPanel.Visibility = _activePanel == FeaturePanel.Lyrics ? Visibility.Visible : Visibility.Collapsed;
         ClearStreamsButton.Visibility = _activePanel == FeaturePanel.Streams ? Visibility.Visible : Visibility.Collapsed;
 
         var accentBlue = (Brush)FindResource("AccentBlue");
@@ -494,6 +560,9 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
 
         ArtistsTabButton.Background = _activePanel == FeaturePanel.Artists ? accentBlue : Brushes.Transparent;
         ArtistsTabButton.Foreground = _activePanel == FeaturePanel.Artists ? Brushes.White : textSecondary;
+
+        LyricsTabButton.Background = _activePanel == FeaturePanel.Lyrics ? accentBlue : Brushes.Transparent;
+        LyricsTabButton.Foreground = _activePanel == FeaturePanel.Lyrics ? Brushes.White : textSecondary;
     }
 
     private void RefreshWhatsNextHeader()
@@ -714,9 +783,17 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
                 ? _metadataTracker.Snapshot()
                 : new NowPlaying();
 
+            if (_liveQueueTracker.IsLiveActive)
+                TryApplyLiveRadioNowPlaying(playing);
+
             var domPlaying = await _playbackService.GetNowPlayingAsync(core);
+            _browserAlbumArtUrl = domPlaying.AlbumArtUrl;
             MergeDomNowPlayingFallback(playing, domPlaying);
-            EnrichNowPlayingFromCapturedMetadata(playing);
+
+            if (_liveQueueTracker.IsLiveActive)
+                ApplyLiveRadioAlbumArt(playing);
+            else
+                EnrichNowPlayingFromCapturedMetadata(playing);
 
             if (IsEmptyNowPlaying(playing))
                 return;
@@ -760,13 +837,16 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
             }
         }
 
-        if (string.IsNullOrEmpty(playing.AlbumArtUrl) && !string.IsNullOrEmpty(domPlaying.AlbumArtUrl))
+        // Prefer live browser player art — it matches the thumbnail shown in the WebView.
+        if (!string.IsNullOrEmpty(domPlaying.AlbumArtUrl))
             playing.AlbumArtUrl = domPlaying.AlbumArtUrl;
     }
 
     private void ApplyNowPlayingToUi(NowPlaying playing)
     {
-        if (playing.TrackName != _currentTrack.TrackName)
+        var trackChanged = playing.TrackName != _currentTrack.TrackName;
+
+        if (trackChanged)
         {
             _currentTrack.TrackName = playing.TrackName;
             NowPlayingTrack.Text = playing.TrackName;
@@ -806,23 +886,226 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         if (playing.AlbumArtUrl != _currentTrack.AlbumArtUrl)
         {
             _currentTrack.AlbumArtUrl = playing.AlbumArtUrl;
-            if (!string.IsNullOrEmpty(playing.AlbumArtUrl))
+            NowPlayingArt.Source = LoadAlbumArtImage(playing.AlbumArtUrl);
+            if (NowPlayingArt.Source != null)
+                Log.Debug("Updated album art image");
+            else if (!string.IsNullOrEmpty(playing.AlbumArtUrl))
+                Log.Error("Error loading album art image from URL: {Url}", playing.AlbumArtUrl);
+        }
+
+        if (trackChanged && _activePanel == FeaturePanel.Lyrics && !IsEmptyTrackName(playing.TrackName))
+        {
+            if (_liveQueueTracker.IsLiveActive && TryOfferLiveNextTrackLyrics())
             {
-                try
-                {
-                    NowPlayingArt.Source = new BitmapImage(new Uri(playing.AlbumArtUrl));
-                    Log.Debug("Updated album art image");
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "Error loading album art image from URL: {Url}", playing.AlbumArtUrl);
-                }
+                UpdateLiveLyricsHeaderForPinnedTrack();
             }
             else
             {
-                NowPlayingArt.Source = null;
+                Log.Information("Now playing changed while lyrics panel is open — auto-refreshing lyrics for {TrackName}", playing.TrackName);
+                _ = FetchAndDisplayLyricsAsync();
             }
         }
+        else if (_activePanel == FeaturePanel.Lyrics)
+        {
+            if (_liveQueueTracker.IsLiveActive && !string.IsNullOrEmpty(_lyricsDisplayedKey))
+                UpdateLiveLyricsHeaderForPinnedTrack();
+            else
+                SyncLyricsHeaderFromNowPlaying();
+        }
+    }
+
+    private static string BuildLyricsTrackKey(string? artist, string? track) =>
+        string.IsNullOrWhiteSpace(track) ? string.Empty : $"{artist?.Trim()}|{track.Trim()}";
+
+    private static string BuildLyricsTrackKey(LiveCutEntry? cut) =>
+        cut == null ? string.Empty : BuildLyricsTrackKey(cut.ArtistName, cut.TrackName);
+
+    /// <summary>
+    /// Live radio only: queue moved ahead while user is reading current lyrics — offer next track without switching.
+    /// </summary>
+    private bool TryOfferLiveNextTrackLyrics()
+    {
+        if (!_liveQueueTracker.IsLiveActive || string.IsNullOrEmpty(_lyricsDisplayedKey))
+            return false;
+
+        var cut = _liveQueueTracker.GetNowPlayingCut();
+        if (cut == null || string.IsNullOrWhiteSpace(cut.TrackName))
+            return false;
+
+        var nextKey = BuildLyricsTrackKey(cut);
+        if (nextKey == _lyricsDisplayedKey)
+        {
+            ClearLiveLyricsNextTrackOffer();
+            return false;
+        }
+
+        _pendingLiveLyricsCut = cut;
+        ShowLiveLyricsNextTrackBanner(cut);
+        Log.Information("Live radio lyrics deferred — keeping {CurrentKey}, next available: {NextKey}", _lyricsDisplayedKey, nextKey);
+        return true;
+    }
+
+    private void ShowLiveLyricsNextTrackBanner(LiveCutEntry cut)
+    {
+        LiveLyricsNextTrackText.Text = cut.DisplayLine;
+        LiveLyricsNextTrackBanner.Visibility = Visibility.Visible;
+        UpdateLyricsBodyLayoutForBanner();
+    }
+
+    private void ClearLiveLyricsNextTrackOffer()
+    {
+        _pendingLiveLyricsCut = null;
+        LiveLyricsNextTrackBanner.Visibility = Visibility.Collapsed;
+        UpdateLyricsBodyLayoutForBanner();
+    }
+
+    private void UpdateLyricsBodyLayoutForBanner()
+    {
+        LyricsBodyText.Margin = LiveLyricsNextTrackBanner.Visibility == Visibility.Visible
+            ? new Thickness(30, 78, 30, 28)
+            : new Thickness(30, 28, 30, 28);
+    }
+
+    private void UpdateLiveLyricsHeaderForPinnedTrack()
+    {
+        if (!string.IsNullOrEmpty(_lyricsDisplayedTrackName))
+        {
+            SetLyricsTrackInfo(
+                _lyricsDisplayedTrackName,
+                _lyricsDisplayedArtist ?? "Unknown Artist",
+                _lyricsDisplayedArtUrl);
+            return;
+        }
+
+        SyncLyricsHeaderFromNowPlaying();
+    }
+
+    private void SetPinnedLyricsDisplay(string trackName, string artistName, string? artUrl)
+    {
+        _lyricsDisplayedKey = BuildLyricsTrackKey(artistName, trackName);
+        _lyricsDisplayedTrackName = trackName;
+        _lyricsDisplayedArtist = artistName;
+        _lyricsDisplayedArtUrl = artUrl;
+        SetLyricsTrackInfo(trackName, artistName, artUrl);
+    }
+
+    private void LiveLyricsNextTrackButton_Click(object sender, RoutedEventArgs e)
+    {
+        var cut = _pendingLiveLyricsCut ?? _liveQueueTracker.GetNowPlayingCut();
+        ClearLiveLyricsNextTrackOffer();
+        _ = FetchAndDisplayLyricsAsync(liveCutOverride: cut);
+    }
+
+    /// <summary>
+    /// Keeps the lyrics panel header in sync with the main now-playing footer.
+    /// </summary>
+    private void SyncLyricsHeaderFromNowPlaying()
+    {
+        var stationName = _currentTrack.StationName ?? "No station selected";
+        SetLyricsTrackInfo(
+            _currentTrack.TrackName ?? "No track playing",
+            ResolveLyricsDisplayArtist(stationName),
+            ResolveNowPlayingAlbumArtUrl());
+    }
+
+    /// <summary>
+    /// Prefer the live browser player thumbnail; fall back to captured metadata when DOM art is unavailable.
+    /// For live radio, prefer track art from the What's Next queue over the channel logo in the browser.
+    /// </summary>
+    private string? ResolveNowPlayingAlbumArtUrl()
+    {
+        if (_liveQueueTracker.IsLiveActive)
+        {
+            var cutArt = _liveQueueTracker.GetNowPlayingCut()?.ImageUrl;
+            if (!string.IsNullOrEmpty(cutArt))
+                return cutArt;
+        }
+
+        return !string.IsNullOrEmpty(_browserAlbumArtUrl) ? _browserAlbumArtUrl : _currentTrack.AlbumArtUrl;
+    }
+
+    private static string? BuildLiveNowPlayingKey(LiveCutEntry? cut) =>
+        cut == null || string.IsNullOrWhiteSpace(cut.TrackName)
+            ? null
+            : $"{cut.ArtistName}|{cut.TrackName}|{cut.ValidFromUtc:O}";
+
+    /// <summary>
+    /// Overlays track/artist from the live radio What's Next queue onto now playing.
+    /// </summary>
+    private bool TryApplyLiveRadioNowPlaying(NowPlaying playing)
+    {
+        var cut = _liveQueueTracker.GetNowPlayingCut();
+        if (cut == null || string.IsNullOrWhiteSpace(cut.TrackName))
+            return false;
+
+        playing.TrackName = cut.TrackName.Trim();
+
+        var channel = _liveQueueTracker.ActiveChannel?.ChannelName;
+        if (!string.IsNullOrWhiteSpace(channel))
+            playing.StationName = channel.Trim();
+
+        ApplyLiveRadioAlbumArt(playing, cut);
+        return true;
+    }
+
+    private void ApplyLiveRadioAlbumArt(NowPlaying playing, LiveCutEntry? cut = null)
+    {
+        cut ??= _liveQueueTracker.GetNowPlayingCut();
+        if (!string.IsNullOrEmpty(cut?.ImageUrl))
+            playing.AlbumArtUrl = cut.ImageUrl;
+    }
+
+    private async Task ApplyLiveRadioNowPlayingAsync()
+    {
+        var core = _sessionService?.CoreWebView2;
+        if (core == null || !IsMonitoring || !_liveQueueTracker.IsLiveActive)
+            return;
+
+        try
+        {
+            _liveQueueTracker.RefreshPositions();
+
+            var playing = _metadataTracker.HasRecentMetadata(TimeSpan.FromMinutes(30))
+                ? _metadataTracker.Snapshot()
+                : new NowPlaying();
+
+            if (!TryApplyLiveRadioNowPlaying(playing))
+                return;
+
+            var domPlaying = await _playbackService.GetNowPlayingAsync(core);
+            _browserAlbumArtUrl = domPlaying.AlbumArtUrl;
+            MergeDomNowPlayingFallback(playing, domPlaying);
+            ApplyLiveRadioAlbumArt(playing);
+
+            if (IsEmptyNowPlaying(playing))
+                return;
+
+            await Dispatcher.InvokeAsync(() => ApplyNowPlayingToUi(playing));
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Error applying live radio now playing from What's Next queue");
+        }
+    }
+
+    private string ResolveLyricsDisplayArtist(string stationName)
+    {
+        if (_liveQueueTracker.IsLiveActive)
+        {
+            var liveArtist = _liveQueueTracker.GetNowPlayingCut()?.ArtistName;
+            if (!string.IsNullOrWhiteSpace(liveArtist))
+                return liveArtist.Trim();
+        }
+
+        return stationName;
+    }
+
+    private LyricsArtistResolution ResolveLyricsArtist(string trackName, string stationName)
+    {
+        if (_liveQueueTracker.IsLiveActive)
+            return LyricsSearchQueryBuilder.ResolveArtistForLiveRadio(_liveQueueTracker.GetNowPlayingCut());
+
+        return LyricsSearchQueryBuilder.ResolveArtist(trackName, stationName, _streamEntries);
     }
 
     /// <summary>
@@ -1289,88 +1572,391 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         }
     }
 
-    private async void LyricsButton_Click(object sender, RoutedEventArgs e)
+    private void LyricsButton_Click(object sender, RoutedEventArgs e)
     {
+        LyricsTabButton.Visibility = Visibility.Visible;
+        _activePanel = FeaturePanel.Lyrics;
+        SetTabState();
+
+        _ = FetchAndDisplayLyricsAsync();
+    }
+
+    /// <summary>
+    /// Fetches lyrics for whatever track is currently in <see cref="_currentTrack"/> and renders
+    /// them into the in-window Lyrics panel. Guarded by a token so that if the now-playing track
+    /// changes again while a fetch is in flight, the stale result is discarded instead of
+    /// overwriting the UI for the newer track.
+    /// </summary>
+    private async Task FetchAndDisplayLyricsAsync(LiveCutEntry? liveCutOverride = null)
+    {
+        var token = ++_lyricsFetchToken;
+        string? searchQuery = null;
+        bool IsStale() => token != _lyricsFetchToken;
+
         try
         {
-            var lyricsWindow = LyricsWindow.GetInstance();
-            lyricsWindow.Owner = this;
+            var liveCutForFetch = liveCutOverride
+                ?? (_liveQueueTracker.IsLiveActive ? _liveQueueTracker.GetNowPlayingCut() : null);
+            var hasLiveTrack = liveCutForFetch != null &&
+                               !string.IsNullOrWhiteSpace(liveCutForFetch.TrackName);
 
-            if (_currentTrack != null)
+            if ((_currentTrack == null || IsEmptyTrackName(_currentTrack.TrackName)) && !hasLiveTrack)
             {
-                lyricsWindow.SetTrackInfo(
-                    _currentTrack.TrackName ?? "Unknown Track",
-                    _currentTrack.StationName ?? "Unknown Station",
-                    _currentTrack.AlbumArtUrl);
+                Log.Information("Lyrics requested but no track is currently playing");
+                LyricsFetchLogger.LogNoTrack();
+                _lyricsFetchedForTrack = null;
+                SetLyricsTrackInfo("No Track", "No Station", null);
+                ShowLyricsEmptyState("No track currently playing");
+                return;
+            }
 
-                lyricsWindow.SetLyrics("Fetching lyrics...");
-                lyricsWindow.Show();
-                lyricsWindow.Activate();
+            var trackName = hasLiveTrack
+                ? liveCutForFetch!.TrackName.Trim()
+                : _currentTrack.TrackName ?? "Unknown Track";
+            var stationName = _currentTrack.StationName ?? "Unknown Station";
 
-                const string lyricsFilePath = "lyrics.txt";
-                if (File.Exists(lyricsFilePath))
+            if (_liveQueueTracker.IsLiveActive)
+            {
+                var channel = _liveQueueTracker.ActiveChannel?.ChannelName;
+                if (!string.IsNullOrWhiteSpace(channel))
+                    stationName = channel.Trim();
+            }
+
+            var artistResolution = liveCutOverride != null
+                ? LyricsSearchQueryBuilder.ResolveArtistForLiveRadio(liveCutOverride)
+                : ResolveLyricsArtist(trackName, stationName);
+            var artistName = artistResolution.Artist ?? string.Empty;
+            var displayArtist = !string.IsNullOrWhiteSpace(artistName)
+                ? artistName
+                : ResolveLyricsDisplayArtist(stationName);
+            var displayArtUrl = liveCutOverride?.ImageUrl
+                ?? (hasLiveTrack ? liveCutForFetch!.ImageUrl : null)
+                ?? ResolveNowPlayingAlbumArtUrl();
+
+            if (IsStale())
+                return;
+
+            if (IsProcessStillRunning(_activeLyricsProcess))
+            {
+                try
                 {
-                    try
-                    {
-                        File.Delete(lyricsFilePath);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warning("Could not delete existing lyrics.txt: {Message}", ex.Message);
-                    }
+                    Log.Debug("Killing previous in-flight LyricsFetch process (track changed before it finished)");
+                    _activeLyricsProcess!.Kill(entireProcessTree: true);
                 }
-
-                var searchQuery = _currentTrack.TrackName ?? "Unknown Track";
-                var parts = searchQuery.Split(new[] { " - " }, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length < 2)
-                    searchQuery = _currentTrack.TrackName ?? "Unknown Track";
-
-                var startInfo = new System.Diagnostics.ProcessStartInfo
+                catch (Exception ex)
                 {
-                    FileName = "LyricsFetch.exe",
-                    Arguments = $"-- -S \"{searchQuery}\" -o",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                };
+                    Log.Debug(ex, "Could not kill previous LyricsFetch process");
+                }
+            }
+            _activeLyricsProcess = null;
 
-                using var process = new System.Diagnostics.Process { StartInfo = startInfo };
+            SetLyricsTrackInfo(trackName, displayArtist, displayArtUrl);
+            ShowLyricsLoadingState();
+            ClearLiveLyricsNextTrackOffer();
+
+            var workingDirectory = Environment.CurrentDirectory;
+            var lyricsFetchPath = ResolveLyricsFetchPath();
+            var exeDirectory = IOPath.GetDirectoryName(lyricsFetchPath) ?? workingDirectory;
+            var lyricsFileInCwd = IOPath.Combine(workingDirectory, "lyrics.txt");
+            var lyricsFileInExeDir = IOPath.Combine(exeDirectory, "lyrics.txt");
+
+            var queryDetails = LyricsSearchQueryBuilder.BuildWithDetails(trackName, artistName);
+            searchQuery = queryDetails.Query;
+
+            if (string.IsNullOrWhiteSpace(searchQuery))
+            {
+                Log.Warning("Lyrics fetch skipped — could not build a search query for track {TrackName}", trackName);
+                ShowLyricsEmptyState("No track currently playing");
+                return;
+            }
+
+            Log.Information(
+                "Lyrics fetch started — Track: {TrackName}, Artist: {ArtistName}, ArtistSource: {ArtistSource}, Station: {StationName}, SearchQuery: {SearchQuery}, QuerySource: {QuerySource}, Exe: {ExePath}, WorkingDir: {WorkingDir}, ExpectedOutput: {OutputInCwd} or {OutputInExeDir}, LogFile: {LogFile}",
+                trackName, artistName, artistResolution.Source, stationName, searchQuery, queryDetails.Source, lyricsFetchPath, workingDirectory, lyricsFileInCwd, lyricsFileInExeDir, LyricsFetchLogger.LogFilePath);
+
+            var fetchArguments = $"-- -S \"{searchQuery}\" -o";
+            LyricsFetchLogger.LogFetchStarted(
+                trackName, artistName, artistResolution.Source, stationName, searchQuery, queryDetails.Source,
+                lyricsFetchPath, fetchArguments, exeDirectory,
+                lyricsFileInCwd, lyricsFileInExeDir);
+
+            foreach (var existingPath in new[] { lyricsFileInCwd, lyricsFileInExeDir })
+            {
+                if (!File.Exists(existingPath))
+                    continue;
+
+                try
+                {
+                    File.Delete(existingPath);
+                    Log.Debug("Deleted existing lyrics file at {Path}", existingPath);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Could not delete existing lyrics file at {Path}", existingPath);
+                }
+            }
+
+            if (!File.Exists(lyricsFetchPath))
+            {
+                Log.Error(
+                    "LyricsFetch.exe not found — checked BaseDirectory/Lyrics, CWD/Lyrics, and CWD. WorkingDir: {WorkingDir}",
+                    workingDirectory);
+                LyricsFetchLogger.LogExeNotFound(workingDirectory, lyricsFetchPath);
+                if (!IsStale())
+                {
+                    ShowLyricsEmptyState("Lyrics fetch failed: LyricsFetch.exe not found");
+                    StatusText.Text = "Lyrics fetch failed: LyricsFetch.exe not found";
+                }
+                return;
+            }
+
+            var startInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = lyricsFetchPath,
+                Arguments = fetchArguments,
+                WorkingDirectory = exeDirectory,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            Log.Debug("Starting LyricsFetch — FileName: {FileName}, Arguments: {Arguments}, WorkingDirectory: {WorkingDirectory}",
+                startInfo.FileName, startInfo.Arguments, startInfo.WorkingDirectory);
+
+            using var process = new System.Diagnostics.Process { StartInfo = startInfo };
+
+            try
+            {
                 process.Start();
+                _activeLyricsProcess = process;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to start LyricsFetch process at {ExePath}", lyricsFetchPath);
+                LyricsFetchLogger.LogProcessStartFailed(trackName, searchQuery, lyricsFetchPath, ex);
+                if (!IsStale())
+                {
+                    ShowLyricsEmptyState($"Lyrics fetch failed: {ex.Message}");
+                    StatusText.Text = "Lyrics fetch failed";
+                }
+                return;
+            }
+
+            try
+            {
+                var stdoutTask = process.StandardOutput.ReadToEndAsync();
+                var stderrTask = process.StandardError.ReadToEndAsync();
 
                 var attempts = 0;
                 const int maxAttempts = 30;
 
-                while (!File.Exists(lyricsFilePath) && attempts < maxAttempts)
+                while (attempts < maxAttempts)
                 {
+                    var foundInCwd = File.Exists(lyricsFileInCwd);
+                    var foundInExeDir = File.Exists(lyricsFileInExeDir);
+
+                    if (foundInCwd || foundInExeDir)
+                    {
+                        Log.Debug("Lyrics file detected after {Attempt}s — InCwd: {InCwd}, InExeDir: {InExeDir}",
+                            attempts + 1, foundInCwd, foundInExeDir);
+                        break;
+                    }
+
+                    if (process.HasExited)
+                    {
+                        Log.Debug("LyricsFetch exited before output file appeared — ExitCode: {ExitCode}, Attempt: {Attempt}",
+                            process.ExitCode, attempts + 1);
+                        break;
+                    }
+
                     await Task.Delay(1000);
                     attempts++;
                 }
 
-                if (File.Exists(lyricsFilePath))
+                if (!process.HasExited)
+                {
+                    var exited = process.WaitForExit(5000);
+                    if (!exited)
+                        Log.Warning("LyricsFetch did not exit within 5s after polling finished");
+                }
+
+                var stdout = await stdoutTask;
+                var stderr = await stderrTask;
+
+                Log.Information(
+                    "LyricsFetch finished — ExitCode: {ExitCode}, Waited: {Attempts}s, StdOut: {StdOut}, StdErr: {StdErr}",
+                    process.ExitCode, attempts, TrimLogText(stdout), TrimLogText(stderr));
+
+                var resolvedLyricsPath = File.Exists(lyricsFileInCwd) ? lyricsFileInCwd
+                    : File.Exists(lyricsFileInExeDir) ? lyricsFileInExeDir
+                    : null;
+
+                if (resolvedLyricsPath != null)
                 {
                     await Task.Delay(500);
-                    var lyrics = await File.ReadAllTextAsync(lyricsFilePath);
-                    lyricsWindow.SetLyrics(lyrics);
+                    var lyrics = await File.ReadAllTextAsync(resolvedLyricsPath);
+
+                    if (IsStale())
+                    {
+                        Log.Debug("Discarding lyrics result for {TrackName} — a newer track is now active", trackName);
+                        LyricsFetchLogger.LogDiscardedStaleResult(trackName, searchQuery);
+                        return;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(lyrics))
+                    {
+                        Log.Warning("Lyrics file was empty at {Path}", resolvedLyricsPath);
+                        LyricsFetchLogger.LogEmptyLyricsFile(
+                            trackName, artistName, stationName, searchQuery, resolvedLyricsPath,
+                            process.ExitCode, stdout, stderr);
+                        ShowLyricsEmptyState("No lyrics found for this track");
+                        StatusText.Text = "No lyrics found";
+                        return;
+                    }
+
+                    Log.Information("Lyrics loaded from {Path} ({CharCount} characters)", resolvedLyricsPath, lyrics.Length);
+                    LyricsFetchLogger.LogFetchSucceeded(
+                        trackName, artistName, stationName, searchQuery,
+                        process.ExitCode, attempts, stdout, stderr,
+                        resolvedLyricsPath, lyrics.Length);
+                    _lyricsFetchedForTrack = trackName;
+                    ShowLyricsText(lyrics);
+                    SetPinnedLyricsDisplay(trackName, displayArtist, displayArtUrl);
+                    if (_liveQueueTracker.IsLiveActive)
+                        TryOfferLiveNextTrackLyrics();
+                    return;
                 }
-                else
+
+                Log.Warning(
+                    "Lyrics fetch failed — no output file after {Attempts}s. ExitCode: {ExitCode}, Checked: {PathInCwd}, {PathInExeDir}, StdOut: {StdOut}, StdErr: {StdErr}",
+                    attempts, process.ExitCode, lyricsFileInCwd, lyricsFileInExeDir, TrimLogText(stdout), TrimLogText(stderr));
+
+                LyricsFetchLogger.LogFetchFailed(
+                    trackName, artistName, stationName, searchQuery,
+                    process.ExitCode, attempts, stdout, stderr,
+                    lyricsFileInCwd, lyricsFileInExeDir);
+
+                if (!IsStale())
                 {
-                    lyricsWindow.SetLyrics("No lyrics found (timeout waiting for lyrics.txt)");
+                    ShowLyricsEmptyState("No lyrics found for this track");
+                    StatusText.Text = "Lyrics fetch failed";
+                    UpdateLiveLyricsHeaderForPinnedTrack();
                 }
             }
-            else
+            finally
             {
-                lyricsWindow.SetTrackInfo("No Track", "No Station");
-                lyricsWindow.SetLyrics("No track currently playing");
-                lyricsWindow.Show();
-                lyricsWindow.Activate();
+                // The process is disposed once this `using` scope ends; drop the shared
+                // reference so the next fetch never touches a disposed Process object.
+                if (ReferenceEquals(_activeLyricsProcess, process))
+                    _activeLyricsProcess = null;
             }
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Error opening lyrics window");
-            StatusText.Text = "Error opening lyrics window";
+            Log.Error(ex, "Unexpected error during lyrics fetch");
+            LyricsFetchLogger.LogUnexpectedError(_currentTrack?.TrackName, searchQuery, ex);
+            if (!IsStale())
+            {
+                ShowLyricsEmptyState("Something went wrong fetching lyrics");
+                StatusText.Text = "Error fetching lyrics";
+            }
         }
+    }
+
+    private static bool IsProcessStillRunning(System.Diagnostics.Process? process)
+    {
+        if (process == null)
+            return false;
+
+        try
+        {
+            return !process.HasExited;
+        }
+        catch (InvalidOperationException)
+        {
+            // Thrown when the process was never associated or has already been disposed.
+            return false;
+        }
+    }
+
+    private void SetLyricsTrackInfo(string trackName, string stationName, string? albumArtUrl)
+    {
+        LyricsTrackNameText.Text = trackName;
+        LyricsArtistNameText.Text = stationName;
+        LyricsAlbumArt.Source = LoadAlbumArtImage(albumArtUrl);
+    }
+
+    private static BitmapImage? LoadAlbumArtImage(string? albumArtUrl)
+    {
+        if (string.IsNullOrEmpty(albumArtUrl))
+            return null;
+
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.UriSource = new Uri(albumArtUrl);
+            image.EndInit();
+            return image;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Error loading album art from URL: {Url}", albumArtUrl);
+            return null;
+        }
+    }
+
+    private void ShowLyricsLoadingState()
+    {
+        LyricsLoadingState.Visibility = Visibility.Visible;
+        LyricsEmptyState.Visibility = Visibility.Collapsed;
+        LyricsBodyText.Text = "";
+        LyricsBodyText.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowLyricsEmptyState(string message)
+    {
+        LyricsLoadingState.Visibility = Visibility.Collapsed;
+        LyricsBodyText.Visibility = Visibility.Collapsed;
+        LyricsEmptyStateText.Text = message;
+        LyricsEmptyState.Visibility = Visibility.Visible;
+    }
+
+    private void ShowLyricsText(string lyrics)
+    {
+        LyricsLoadingState.Visibility = Visibility.Collapsed;
+        LyricsEmptyState.Visibility = Visibility.Collapsed;
+        LyricsBodyText.Text = lyrics.Trim();
+        LyricsBodyText.Visibility = Visibility.Visible;
+    }
+
+    private static string ResolveLyricsFetchPath()
+    {
+        var candidates = new[]
+        {
+            IOPath.Combine(AppContext.BaseDirectory, "Lyrics", "LyricsFetch.exe"),
+            IOPath.Combine(Environment.CurrentDirectory, "Lyrics", "LyricsFetch.exe"),
+            IOPath.Combine(Environment.CurrentDirectory, "LyricsFetch.exe")
+        };
+
+        foreach (var path in candidates)
+        {
+            if (File.Exists(path))
+                return path;
+        }
+
+        return candidates[0];
+    }
+
+    private static string TrimLogText(string? text, int maxLength = 500)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "(empty)";
+
+        var normalized = text.Trim().Replace("\r\n", "\\n").Replace('\n', '\\').Replace('\r', '\\');
+        return normalized.Length <= maxLength ? normalized : normalized[..maxLength] + "...";
     }
 
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
