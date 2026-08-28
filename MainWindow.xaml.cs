@@ -50,6 +50,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     private readonly LiveRadioRecorder _liveRadioRecorder = new();
     private readonly DispatcherTimer _nowPlayingTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly DispatcherTimer _liveQueueRefreshTimer = new() { Interval = TimeSpan.FromSeconds(30) };
+    private readonly DispatcherTimer _liveRecordUiTimer = new() { Interval = TimeSpan.FromSeconds(1) };
 
     private WebViewSessionService? _sessionService;
     private WebViewNetworkMonitor? _networkMonitor;
@@ -74,6 +75,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     private LiveCutEntry? _pendingLiveLyricsCut;
     private string? _lastLiveNowPlayingKey;
     private string? _liveM3u8Url;
+    private DateTime? _liveRecordStartedAt;
     private System.Diagnostics.Process? _activeLyricsProcess;
     private bool _webExpanded;
     private GridLength _savedPlayerColumnWidth = new(1, GridUnitType.Star);
@@ -97,6 +99,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         SetupLogging();
         _nowPlayingTimer.Tick += async (_, _) => await UpdateNowPlayingAsync();
         _liveQueueRefreshTimer.Tick += async (_, _) => await RefreshLiveQueueAsync();
+        _liveRecordUiTimer.Tick += (_, _) => RefreshLiveRecordControls();
         SetupStationFeedbackWatcher();
         UpdateResponsiveLayout();
         SetTabState();
@@ -625,11 +628,17 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
 
         if (isRecording)
         {
-            LiveRecordStatusText.Text = $"Recording… {IOPath.GetFileName(_liveRadioRecorder.OutputFilePath)}";
+            var fileName = IOPath.GetFileName(_liveRadioRecorder.OutputFilePath);
+            var elapsed = _liveRecordStartedAt.HasValue
+                ? DateTime.Now - _liveRecordStartedAt.Value
+                : TimeSpan.Zero;
+            LiveRecordStatusText.Text =
+                $"Recording {elapsed:mm\\:ss} — {fileName} · click Stop Recording when done";
             LiveRecordStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
             return;
         }
 
+        _liveRecordUiTimer.Stop();
         LiveRecordStatusText.Foreground = (Brush)FindResource("TextMuted");
 
         if (!IsMonitoring)
@@ -639,7 +648,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         else if (!hasStream)
             LiveRecordStatusText.Text = "Waiting for live m3u8 stream…";
         else
-            LiveRecordStatusText.Text = "Ready — saves as .ts (Ctrl+C in console also stops)";
+            LiveRecordStatusText.Text = "Ready — saves as .ts in the app folder";
     }
 
     private async void LiveRecordButton_Click(object sender, RoutedEventArgs e)
@@ -666,13 +675,18 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
             return;
         }
 
+        _liveRecordStartedAt = DateTime.Now;
+        _liveRecordUiTimer.Start();
         RefreshLiveRecordControls();
-        SetStatus($"Recording live radio → {message}");
+        SetStatus($"Recording live radio → {IOPath.GetFileName(message)}");
         Log.Information("Live radio recording started: {Output}", message);
     }
 
     private void LiveStopRecordButton_Click(object sender, RoutedEventArgs e)
     {
+        _liveRecordUiTimer.Stop();
+        _liveRecordStartedAt = null;
+
         var (ok, message) = _liveRadioRecorder.Stop();
         RefreshLiveRecordControls();
 
@@ -2090,7 +2104,10 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         }
 
         if (_liveRadioRecorder.IsRecording)
+        {
+            _liveRecordUiTimer.Stop();
             _liveRadioRecorder.Stop();
+        }
 
         if (_sessionService != null)
             await _sessionService.DisposeAsync();

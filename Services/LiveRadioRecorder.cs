@@ -35,13 +35,16 @@ public sealed class LiveRadioRecorder : IDisposable
             _proxy = new HlsLiveProxy(m3u8Url, bearer, keyBytes);
             _proxy.Start();
 
-            var command = BuildFfmpegCommand(_proxy.PlaylistUrl, bearer, OutputFilePath);
+            var args = BuildFfmpegArguments(_proxy.PlaylistUrl, bearer, OutputFilePath);
             _process = Process.Start(new ProcessStartInfo
             {
-                FileName = "cmd.exe",
-                Arguments = $"/c {command}",
+                FileName = "ffmpeg",
+                Arguments = args,
                 UseShellExecute = false,
-                CreateNoWindow = false
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true
             });
 
             if (_process == null)
@@ -50,6 +53,18 @@ public sealed class LiveRadioRecorder : IDisposable
                 _proxy = null;
                 return (false, "Failed to start ffmpeg.");
             }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _process.StandardError.ReadToEndAsync();
+                }
+                catch
+                {
+                    // ignore when process is stopped
+                }
+            });
 
             return (true, OutputFilePath);
         }
@@ -105,7 +120,7 @@ public sealed class LiveRadioRecorder : IDisposable
         url.Contains("vod-", StringComparison.OrdinalIgnoreCase) ||
         url.Contains("/EPISODE_", StringComparison.OrdinalIgnoreCase);
 
-    private static string BuildFfmpegCommand(string playlistUrl, string bearer, string outputFile)
+    private static string BuildFfmpegArguments(string playlistUrl, string bearer, string outputFile)
     {
         var headers = new StringBuilder()
             .Append("Authorization: ").Append(bearer).Append("\\r\\n")
@@ -114,7 +129,7 @@ public sealed class LiveRadioRecorder : IDisposable
             .Append("User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\\r\\n")
             .ToString();
 
-        return "ffmpeg -hide_banner -loglevel warning " +
+        return "-hide_banner -loglevel error " +
                "-protocol_whitelist file,http,https,tcp,tls,crypto " +
                $"-headers \"{headers}\" " +
                $"-i \"{playlistUrl}\" " +
