@@ -22,4 +22,5 @@ public interface IStreamCaptureHost
     Func<string, Task>? AttemptAutoLoginWithCredsAsync { get; set; }
     PlaybackMetadataTracker MetadataTracker { get; }
     LiveQueueTracker LiveQueueTracker { get; }
+    void SetLiveStreamUrl(string url);
 }

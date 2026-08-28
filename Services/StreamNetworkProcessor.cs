@@ -233,6 +233,10 @@ public sealed class StreamNetworkProcessor
         }
 
         Log.Information("M3U8 traffic detected: {Url}", url);
+
+        if (host.LiveQueueTracker.IsLiveActive && !LiveRadioRecorder.IsVodM3u8(url))
+            host.SetLiveStreamUrl(url);
+
         await host.RunOnUiAsync(() =>
         {
             host.StreamEntries.Add(new StreamEntry

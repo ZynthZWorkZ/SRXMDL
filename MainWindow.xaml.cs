@@ -47,6 +47,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     private readonly WebViewPlaybackService _playbackService = new();
     private readonly PlaybackMetadataTracker _metadataTracker = new();
     private readonly LiveQueueTracker _liveQueueTracker = new();
+    private readonly LiveRadioRecorder _liveRadioRecorder = new();
     private readonly DispatcherTimer _nowPlayingTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly DispatcherTimer _liveQueueRefreshTimer = new() { Interval = TimeSpan.FromSeconds(30) };
 
@@ -72,6 +73,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     private string? _lyricsDisplayedArtUrl;
     private LiveCutEntry? _pendingLiveLyricsCut;
     private string? _lastLiveNowPlayingKey;
+    private string? _liveM3u8Url;
     private System.Diagnostics.Process? _activeLyricsProcess;
     private bool _webExpanded;
     private GridLength _savedPlayerColumnWidth = new(1, GridUnitType.Star);
@@ -109,6 +111,16 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     public PlaybackMetadataTracker MetadataTracker => _metadataTracker;
 
     public LiveQueueTracker LiveQueueTracker => _liveQueueTracker;
+
+    public void SetLiveStreamUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || LiveRadioRecorder.IsVodM3u8(url))
+            return;
+
+        _liveM3u8Url = url;
+        Dispatcher.Invoke(RefreshLiveRecordControls);
+        Log.Information("Live radio stream URL captured: {Url}", url);
+    }
 
     public string? LastTuneSourceUrl { get; set; }
     public string? LastTuneSourcePayload { get; set; }
@@ -231,7 +243,6 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
                 if (url.StartsWith("https://www.siriusxm.com/player/artist-station", StringComparison.OrdinalIgnoreCase))
                     await ProcessArtistStationUrlAsync(url);
             };
-
             await _sessionService.InitializeAsync(SxmWebView);
 
             var core = _sessionService.CoreWebView2;
@@ -455,7 +466,9 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
             if (!_liveQueueTracker.IsLiveActive)
             {
                 _lastLiveNowPlayingKey = null;
+                _liveM3u8Url = null;
                 ClearLiveLyricsNextTrackOffer();
+                RefreshLiveRecordControls();
                 return;
             }
 
@@ -597,6 +610,82 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         var hasEntries = _liveQueueTracker.DisplayEntries.Count > 0;
         WhatsNextEmptyState.Visibility = hasEntries ? Visibility.Collapsed : Visibility.Visible;
         WhatsNextListView.Visibility = hasEntries ? Visibility.Visible : Visibility.Collapsed;
+        RefreshLiveRecordControls();
+    }
+
+    private void RefreshLiveRecordControls()
+    {
+        var isLive = _liveQueueTracker.IsLiveActive;
+        var isRecording = _liveRadioRecorder.IsRecording;
+        var hasStream = !string.IsNullOrWhiteSpace(_liveM3u8Url);
+
+        LiveRecordButton.Visibility = isRecording ? Visibility.Collapsed : Visibility.Visible;
+        LiveStopRecordButton.Visibility = isRecording ? Visibility.Visible : Visibility.Collapsed;
+        LiveRecordButton.IsEnabled = isLive && hasStream && IsMonitoring;
+
+        if (isRecording)
+        {
+            LiveRecordStatusText.Text = $"Recording… {IOPath.GetFileName(_liveRadioRecorder.OutputFilePath)}";
+            LiveRecordStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+            return;
+        }
+
+        LiveRecordStatusText.Foreground = (Brush)FindResource("TextMuted");
+
+        if (!IsMonitoring)
+            LiveRecordStatusText.Text = "Start monitoring to record";
+        else if (!isLive)
+            LiveRecordStatusText.Text = "Tune a live radio channel to record";
+        else if (!hasStream)
+            LiveRecordStatusText.Text = "Waiting for live m3u8 stream…";
+        else
+            LiveRecordStatusText.Text = "Ready — saves as .ts (Ctrl+C in console also stops)";
+    }
+
+    private async void LiveRecordButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_liveM3u8Url))
+        {
+            MessageBox.Show("No live m3u8 URL captured yet. Keep the station playing for a few seconds.", "Record Live Radio",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var channel = _liveQueueTracker.ActiveChannel;
+        var cut = _liveQueueTracker.GetNowPlayingCut();
+        var baseName = channel?.ChannelName ?? "Live Radio";
+        if (cut != null && !string.IsNullOrWhiteSpace(cut.TrackName))
+            baseName = $"{baseName} - {cut.TrackName}";
+        baseName = $"{baseName} {DateTime.Now:yyyy-MM-dd HHmmss}";
+
+        var (ok, message) = await _liveRadioRecorder.StartAsync(_liveM3u8Url, baseName);
+        if (!ok)
+        {
+            MessageBox.Show(message, "Record Live Radio", MessageBoxButton.OK, MessageBoxImage.Warning);
+            SetStatus(message);
+            return;
+        }
+
+        RefreshLiveRecordControls();
+        SetStatus($"Recording live radio → {message}");
+        Log.Information("Live radio recording started: {Output}", message);
+    }
+
+    private void LiveStopRecordButton_Click(object sender, RoutedEventArgs e)
+    {
+        var (ok, message) = _liveRadioRecorder.Stop();
+        RefreshLiveRecordControls();
+
+        if (!ok)
+        {
+            MessageBox.Show(message, "Record Live Radio", MessageBoxButton.OK, MessageBoxImage.Warning);
+            SetStatus(message);
+            return;
+        }
+
+        SetStatus($"Recording saved: {message}");
+        MessageBox.Show($"Recording saved:\n{message}", "Record Live Radio", MessageBoxButton.OK, MessageBoxImage.Information);
+        Log.Information("Live radio recording stopped: {Message}", message);
     }
 
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -765,6 +854,8 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
                 _metadataTracker.Reset();
                 _liveQueueTracker.Clear();
             }
+
+            RefreshLiveRecordControls();
         });
     }
 
@@ -1997,6 +2088,9 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
                 Log.Error(ex, "Failed to auto-save super log on app close");
             }
         }
+
+        if (_liveRadioRecorder.IsRecording)
+            _liveRadioRecorder.Stop();
 
         if (_sessionService != null)
             await _sessionService.DisposeAsync();

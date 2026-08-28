@@ -241,7 +241,8 @@ namespace SRXMDL.Download
             cmd.Append($"--add-header \"Origin: {origin}\" ");
             cmd.Append($"--add-header \"Referer: {referer}\" ");
             cmd.Append($"--extractor-args \"generic:hls_key={hlsKeyHex}\" ");
-            cmd.Append("--downloader-args \"ffmpeg:--hls-use-mpegts\" ");
+            cmd.Append("--downloader ffmpeg ");
+            cmd.Append("--hls-use-mpegts ");
             if (format == AudioFormat.Mp4)
             {
                 // Keep video; best overall; no audio extraction
