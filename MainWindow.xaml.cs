@@ -2126,6 +2126,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
             ClearFileContents(IOPath.Combine("Login", "authorization Bearer.txt"));
             ClearFileContents(IOPath.Combine("Artist", "ArtistAuth.txt"));
             ClearFileContents(IOPath.Combine("HLSKey", "authorization Bearer.txt"));
+            ClearFileContents(IOPath.Combine("HLSKey", "response.json"));
         }
         catch (Exception ex)
         {

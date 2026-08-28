@@ -722,7 +722,7 @@
                                         <StackPanel Orientation="Horizontal">
                                             <Button x:Name="StreamsTabButton" Content="Stream Activity" Click="StreamsTabButton_Click"
                                                     Style="{StaticResource SegmentedTabButton}"/>
-                                            <Button x:Name="WhatsNextTabButton" Content="What's Next" Click="WhatsNextTabButton_Click"
+                                            <Button x:Name="WhatsNextTabButton" Content="LIVE" Click="WhatsNextTabButton_Click"
                                                     Style="{StaticResource SegmentedTabButton}"/>
                                             <Button x:Name="ArtistsTabButton" Content="Artists" Click="ArtistsTabButton_Click"
                                                     Style="{StaticResource SegmentedTabButton}"/>
