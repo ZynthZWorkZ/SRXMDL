@@ -28,7 +28,7 @@ public sealed class LiveRadioRecorder : IDisposable
         if (string.IsNullOrWhiteSpace(safeName))
             safeName = "live-radio";
 
-        OutputFilePath = Path.GetFullPath($"{safeName}.ts");
+        OutputFilePath = AppSettings.GetDownloadPath($"{safeName}.ts");
 
         try
         {

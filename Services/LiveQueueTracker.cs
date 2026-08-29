@@ -5,6 +5,8 @@ namespace SRXMDL.Services;
 
 public sealed class LiveQueueTracker
 {
+    private const int MaxRecentDisplayed = 5;
+
     private readonly object _sync = new();
     private readonly Dictionary<string, LiveCutEntry> _cutsByKey = new(StringComparer.OrdinalIgnoreCase);
     private ActiveLiveChannel? _activeChannel;
@@ -45,6 +47,17 @@ public sealed class LiveQueueTracker
             lock (_sync)
             {
                 return _cutsByKey.Values.Count(c => !c.IsAd && c.Position == LiveQueuePosition.UpNext);
+            }
+        }
+    }
+
+    public int RecentlyPlayedCount
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _cutsByKey.Values.Count(c => !c.IsAd && c.Position == LiveQueuePosition.Played);
             }
         }
     }
@@ -177,7 +190,13 @@ public sealed class LiveQueueTracker
             }
         }
 
+        var played = ordered.Where(e => e.Position == LiveQueuePosition.Played).ToList();
+        if (played.Count > MaxRecentDisplayed)
+            played = played.Skip(played.Count - MaxRecentDisplayed).ToList();
+
         DisplayEntries.Clear();
+        foreach (var entry in played)
+            DisplayEntries.Add(entry);
         foreach (var entry in ordered.Where(e => e.Position is LiveQueuePosition.NowPlaying or LiveQueuePosition.UpNext))
             DisplayEntries.Add(entry);
     }

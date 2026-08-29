@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Text.Json;
 using System.Text;
+using SRXMDL.Services;
 
 namespace SRXMDL.Download
 {
@@ -33,9 +34,8 @@ namespace SRXMDL.Download
         private string GetOutputFilename(string quality, AudioFormat format)
         {
             string baseName = GetSanitizedBaseName();
-            string ext = format == AudioFormat.Mp3 ? "mp3" : "wav";
-            // Do not append quality to title; use clean base name only
-            return $"{baseName}.{ext}";
+            string ext = format == AudioFormat.Mp3 ? "mp3" : format == AudioFormat.Mp4 ? "mp4" : "wav";
+            return AppSettings.GetDownloadPath($"{baseName}.{ext}");
         }
 
         private string GetSanitizedBaseName()
@@ -230,7 +230,7 @@ namespace SRXMDL.Download
             }
 
             var ext = format == AudioFormat.Mp4 ? "mp4" : "%(ext)s";
-            var outputTemplate = $"{baseName}.{ext}";
+            var outputTemplate = AppSettings.GetDownloadPath($"{baseName}.{ext}");
             var origin = "https://www.siriusxm.com";
             var referer = "https://www.siriusxm.com";
 

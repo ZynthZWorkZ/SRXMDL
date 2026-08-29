@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
@@ -14,6 +15,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
+using Microsoft.Win32;
 using Serilog;
 using SRXMDL.Artist;
 using SRXMDL.Download;
@@ -32,7 +34,8 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         Streams,
         WhatsNext,
         Artists,
-        Lyrics
+        Lyrics,
+        Settings
     }
 
     private const double BaseWidth = 1600;
@@ -66,6 +69,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     private bool _captureBearer;
     private bool _autoLoginStarted;
     private FeaturePanel _activePanel = FeaturePanel.Streams;
+    private FeaturePanel _panelBeforeSettings = FeaturePanel.Streams;
     private int _lyricsFetchToken;
     private string? _lyricsFetchedForTrack;
     private string? _lyricsDisplayedKey;
@@ -101,6 +105,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         _liveQueueRefreshTimer.Tick += async (_, _) => await RefreshLiveQueueAsync();
         _liveRecordUiTimer.Tick += (_, _) => RefreshLiveRecordControls();
         SetupStationFeedbackWatcher();
+        _ = AppSettings.GetDownloadDirectory();
         UpdateResponsiveLayout();
         SetTabState();
     }
@@ -276,9 +281,60 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        ClearCacheNormalState.Visibility = Visibility.Visible;
-        ClearCacheConfirmState.Visibility = Visibility.Collapsed;
-        SettingsPopup.IsOpen = !SettingsPopup.IsOpen;
+        if (_activePanel == FeaturePanel.Settings)
+            return;
+
+        _panelBeforeSettings = _activePanel;
+        _activePanel = FeaturePanel.Settings;
+        SetTabState();
+        RefreshSettingsPanel();
+    }
+
+    private void BackFromSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activePanel != FeaturePanel.Settings)
+            return;
+
+        _activePanel = _panelBeforeSettings;
+        SetTabState();
+    }
+
+    private void RefreshSettingsPanel()
+    {
+        DownloadFolderTextBox.Text = AppSettings.GetDownloadDirectory();
+    }
+
+    private void BrowseDownloadFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "Choose default download folder",
+            InitialDirectory = AppSettings.GetDownloadDirectory()
+        };
+
+        if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.FolderName))
+            return;
+
+        AppSettings.SetDownloadDirectory(dialog.FolderName);
+        RefreshSettingsPanel();
+        SetStatus($"Download folder set to {dialog.FolderName}");
+    }
+
+    private void ResetDownloadFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        AppSettings.ResetDownloadDirectory();
+        RefreshSettingsPanel();
+        SetStatus($"Download folder reset to {AppSettings.GetDefaultDownloadDirectory()}");
+    }
+
+    private void OpenDownloadFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        var folder = AppSettings.GetDownloadDirectory();
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = folder,
+            UseShellExecute = true
+        });
     }
 
     private void ClearCacheButton_Click(object sender, RoutedEventArgs e)
@@ -295,7 +351,6 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
 
     private async void ConfirmClearCache_Click(object sender, RoutedEventArgs e)
     {
-        SettingsPopup.IsOpen = false;
         await RestartAndClearCacheAsync();
     }
 
@@ -400,8 +455,6 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
             Log.Error(ex, "Error toggling super log");
             StatusText.Text = "Error with super log";
         }
-
-        SettingsPopup.IsOpen = false;
     }
 
     private void OnSuperLogEntryCountChanged(int count)
@@ -559,11 +612,19 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
 
     private void SetTabState()
     {
+        var inSettings = _activePanel == FeaturePanel.Settings;
+
+        FeatureTabsBar.Visibility = inSettings ? Visibility.Collapsed : Visibility.Visible;
+        SettingsPanel.Visibility = inSettings ? Visibility.Visible : Visibility.Collapsed;
+
         StreamListView.Visibility = _activePanel == FeaturePanel.Streams ? Visibility.Visible : Visibility.Collapsed;
         WhatsNextPanel.Visibility = _activePanel == FeaturePanel.WhatsNext ? Visibility.Visible : Visibility.Collapsed;
         ArtistsPanel.Visibility = _activePanel == FeaturePanel.Artists ? Visibility.Visible : Visibility.Collapsed;
         LyricsPanel.Visibility = _activePanel == FeaturePanel.Lyrics ? Visibility.Visible : Visibility.Collapsed;
         ClearStreamsButton.Visibility = _activePanel == FeaturePanel.Streams ? Visibility.Visible : Visibility.Collapsed;
+
+        if (inSettings)
+            return;
 
         var accentBlue = (Brush)FindResource("AccentBlue");
         var textSecondary = (Brush)FindResource("TextSecondary");
@@ -602,8 +663,14 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         WhatsNextChannelText.Text = channelLabel;
 
         var upNext = _liveQueueTracker.UpNextCount;
-        var queueHint = upNext > 0
-            ? $"{upNext} track{(upNext == 1 ? "" : "s")} up next · refreshes every ~30s"
+        var recent = Math.Min(_liveQueueTracker.RecentlyPlayedCount, 5);
+        var queueParts = new List<string>();
+        if (recent > 0)
+            queueParts.Add($"{recent} recent");
+        if (upNext > 0)
+            queueParts.Add($"{upNext} up next");
+        var queueHint = queueParts.Count > 0
+            ? $"{string.Join(" · ", queueParts)} · refreshes every ~30s"
             : "Live queue updates from lookAround (~30s)";
 
         WhatsNextShowText.Text = string.IsNullOrWhiteSpace(channel.ShowName)
@@ -648,7 +715,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         else if (!hasStream)
             LiveRecordStatusText.Text = "Waiting for live m3u8 stream…";
         else
-            LiveRecordStatusText.Text = "Ready — saves as .ts in the app folder";
+            LiveRecordStatusText.Text = "Ready — saves to Captures folder";
     }
 
     private async void LiveRecordButton_Click(object sender, RoutedEventArgs e)

@@ -20,7 +20,8 @@ public sealed class LiveCutEntry
     {
         LiveQueuePosition.NowPlaying => "NOW",
         LiveQueuePosition.UpNext => "UP NEXT",
-        _ => "PLAYED"
+        LiveQueuePosition.Played => "RECENT",
+        _ => "RECENT"
     };
 
     public string DisplayLine => string.IsNullOrWhiteSpace(ArtistName)
