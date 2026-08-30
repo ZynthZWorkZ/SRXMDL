@@ -25,4 +25,8 @@
     <Resource Include="Fonts\*.ttf" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Web\player.html" />
+  </ItemGroup>
+
 </Project>

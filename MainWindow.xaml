@@ -653,6 +653,8 @@
                                                     Style="{StaticResource SegmentedTabButton}"/>
                                             <Button x:Name="WhatsNextTabButton" Content="LIVE" Click="WhatsNextTabButton_Click"
                                                     Style="{StaticResource SegmentedTabButton}"/>
+                                            <Button x:Name="LocalServerTabButton" Content="Local" Click="LocalServerTabButton_Click"
+                                                    Style="{StaticResource SegmentedTabButton}"/>
                                             <Button x:Name="ArtistsTabButton" Content="Artists" Click="ArtistsTabButton_Click"
                                                     Style="{StaticResource SegmentedTabButton}"/>
                                             <Button x:Name="LyricsTabButton" Content="Lyrics" Click="LyricsTabButton_Click"
@@ -737,13 +739,16 @@
                                                     </DataTemplate>
                                                 </GridViewColumn.CellTemplate>
                                             </GridViewColumn>
-                                            <GridViewColumn Header="Actions" Width="190">
+                                            <GridViewColumn Header="Actions" Width="220">
                                                 <GridViewColumn.CellTemplate>
                                                     <DataTemplate>
                                                         <StackPanel Orientation="Horizontal">
                                                             <Button Content="📋" Click="CopyButton_Click" 
                                                                     Style="{StaticResource AccentIconButton}"
                                                                     ToolTip="Copy URL" Margin="0,0,5,0" Padding="9,6"/>
+                                                            <Button Content="🔗" Click="CopyProxyUrlButton_Click"
+                                                                    Style="{StaticResource AccentIconButton}"
+                                                                    ToolTip="Copy local proxy URL" Margin="0,0,5,0" Padding="9,6"/>
                                                             <Button Content="🎶" Click="ApplyNowPlaying_Click" 
                                                                     Style="{StaticResource AccentIconButton}"
                                                                     ToolTip="Apply Now Playing metadata" Margin="0,0,5,0" Padding="9,6"/>
@@ -918,6 +923,129 @@
                                         </StackPanel>
                                     </Border>
                                 </Grid>
+
+                                <ScrollViewer x:Name="LocalServerPanel" Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                              Visibility="Collapsed" Padding="14,14,14,14">
+                                    <StackPanel>
+                                        <Border Background="{StaticResource SurfaceRaised}" BorderBrush="{StaticResource BorderSubtle}"
+                                                BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,12">
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                    <Border Background="{StaticResource AccentBlueSoft}" CornerRadius="4" Padding="8,3" Margin="0,0,8,0">
+                                                        <TextBlock Text="LOCAL SERVER" Foreground="{StaticResource AccentBlue}"
+                                                                   FontSize="9" FontWeight="Bold" FontFamily="Consolas"/>
+                                                    </Border>
+                                                    <TextBlock Text="Stream proxy" Foreground="{StaticResource TextPrimary}"
+                                                               FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                                <TextBlock Text="Expose live channels and captures on localhost for VLC, browsers, and other players."
+                                                           Foreground="{StaticResource TextMuted}" FontSize="10"
+                                                           TextWrapping="Wrap" Margin="0,6,0,14"/>
+
+                                                <TextBlock Text="Port" Foreground="{StaticResource TextMuted}" FontSize="10"
+                                                           FontFamily="Consolas" Margin="0,0,0,4"/>
+                                                <TextBox x:Name="StreamServerPortTextBox"
+                                                         Background="#0D0F14" Foreground="{StaticResource TextSecondary}"
+                                                         BorderBrush="{StaticResource BorderSubtle}" Padding="10,8"
+                                                         FontSize="12" FontFamily="Consolas" MaxLength="5" MaxWidth="120"
+                                                         HorizontalAlignment="Left"/>
+                                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                                    <Button x:Name="StreamServerStartButton" Content="Start"
+                                                            Click="StreamServerStartButton_Click"
+                                                            Style="{StaticResource PrimaryButton}" Padding="16,8" FontSize="11" Margin="0,0,8,0"/>
+                                                    <Button x:Name="StreamServerStopButton" Content="Stop"
+                                                            Click="StreamServerStopButton_Click"
+                                                            Style="{StaticResource OutlineButton}" Padding="16,8" FontSize="11" Margin="0,0,8,0"
+                                                            Visibility="Collapsed"/>
+                                                    <Button x:Name="StreamServerOpenButton" Content="Open web player"
+                                                            Click="StreamServerOpenButton_Click"
+                                                            Style="{StaticResource OutlineButton}" Padding="16,8" FontSize="11"/>
+                                                </StackPanel>
+                                                <TextBlock x:Name="StreamServerStatusText"
+                                                           Foreground="{StaticResource TextMuted}" FontSize="10"
+                                                           FontFamily="Consolas" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Background="{StaticResource SurfaceRaised}" BorderBrush="{StaticResource BorderSubtle}"
+                                                BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,12">
+                                            <StackPanel>
+                                                <TextBlock Text="Add channel" Foreground="{StaticResource TextPrimary}"
+                                                           FontSize="12" FontWeight="SemiBold"/>
+                                                <TextBlock Text="Paste a SiriusXM channel UUID to tune and expose another live stream."
+                                                           Foreground="{StaticResource TextMuted}" FontSize="10"
+                                                           TextWrapping="Wrap" Margin="0,4,0,10"/>
+                                                <TextBox x:Name="RadioProxyChannelIdTextBox"
+                                                         Background="#0D0F14" Foreground="{StaticResource TextSecondary}"
+                                                         BorderBrush="{StaticResource BorderSubtle}" Padding="10,8"
+                                                         FontSize="11" FontFamily="Consolas" Margin="0,0,0,8"/>
+                                                <Button x:Name="AddRadioProxyChannelButton" Content="Add to proxy"
+                                                        Click="AddRadioProxyChannelButton_Click"
+                                                        Style="{StaticResource OutlineButton}" Padding="12,7" FontSize="11"
+                                                        HorizontalAlignment="Left"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <TextBlock Text="ACTIVE CHANNELS" Foreground="{StaticResource TextMuted}"
+                                                   FontSize="9" FontWeight="Bold" FontFamily="Consolas" Margin="4,0,0,8"/>
+                                        <ItemsControl x:Name="ProxyChannelList">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="#101218" BorderBrush="#2A3040" BorderThickness="1"
+                                                            CornerRadius="6" Padding="12" Margin="0,0,0,10">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="56"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <Border Width="52" Height="52" CornerRadius="4" ClipToBounds="True"
+                                                                    Background="#1A1D26" BorderBrush="#2A3040" BorderThickness="1">
+                                                                <Grid>
+                                                                    <Image Source="{Binding DisplayImageUrl}" Stretch="UniformToFill"
+                                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                                    <TextBlock Text="📻" FontSize="18" HorizontalAlignment="Center"
+                                                                               VerticalAlignment="Center"
+                                                                               Visibility="{Binding DisplayImageUrl, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}"/>
+                                                                </Grid>
+                                                            </Border>
+                                                            <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
+                                                                <TextBlock Foreground="{StaticResource TextPrimary}"
+                                                                           FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
+                                                                    <Run Text="{Binding ChannelName, Mode=OneWay}"/>
+                                                                    <Run Text="  " Foreground="{StaticResource TextMuted}"/>
+                                                                    <Run Text="{Binding ChannelNumber, StringFormat=CH {0}, Mode=OneWay}"
+                                                                         Foreground="{StaticResource TextMuted}" FontFamily="Consolas" FontSize="10"/>
+                                                                </TextBlock>
+                                                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="9"
+                                                                           FontFamily="Consolas" Margin="0,2,0,0"
+                                                                           Text="{Binding ChannelNumberCanonical, StringFormat=Canonical CH {0}}"/>
+                                                                <TextBlock Text="{Binding ShowName}" Foreground="{StaticResource TextSecondary}"
+                                                                           FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+                                                                <TextBlock Foreground="{StaticResource AccentBlue}" FontSize="10"
+                                                                           TextTrimming="CharacterEllipsis" Margin="0,2,0,0">
+                                                                    <Run Text="{Binding ArtistName, Mode=OneWay}"/>
+                                                                    <Run Text=" — "/>
+                                                                    <Run Text="{Binding TrackName, Mode=OneWay}"/>
+                                                                </TextBlock>
+                                                                <TextBlock Text="{Binding State}" Foreground="{StaticResource TextMuted}"
+                                                                           FontSize="9" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                            </StackPanel>
+                                                            <Button Grid.Column="2" Content="Copy URL" Tag="{Binding}"
+                                                                    Click="CopyLocalChannelUrlButton_Click"
+                                                                    Style="{StaticResource OutlineButton}" Padding="10,6" FontSize="10"
+                                                                    VerticalAlignment="Center"/>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock x:Name="ProxyChannelEmptyText"
+                                                   Text="No channels yet — tune live radio or add a channel ID above."
+                                                   Foreground="{StaticResource TextMuted}" FontSize="11"
+                                                   TextWrapping="Wrap" Margin="4,0,0,8" Visibility="Collapsed"/>
+                                    </StackPanel>
+                                </ScrollViewer>
 
                                 <ScrollViewer x:Name="ArtistsPanel" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
                                     <ListView x:Name="ArtistListView" 

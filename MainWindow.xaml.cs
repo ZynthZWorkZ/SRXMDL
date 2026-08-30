@@ -33,6 +33,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     {
         Streams,
         WhatsNext,
+        LocalServer,
         Artists,
         Lyrics,
         Settings
@@ -51,6 +52,9 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     private readonly PlaybackMetadataTracker _metadataTracker = new();
     private readonly LiveQueueTracker _liveQueueTracker = new();
     private readonly LiveRadioRecorder _liveRadioRecorder = new();
+    private readonly StreamProxyServer _streamProxyServer = new();
+    private readonly RadioProxyCatalog _radioProxyCatalog = new();
+    private readonly LiveChannelTuner _liveChannelTuner = new();
     private readonly DispatcherTimer _nowPlayingTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly DispatcherTimer _liveQueueRefreshTimer = new() { Interval = TimeSpan.FromSeconds(30) };
     private readonly DispatcherTimer _liveRecordUiTimer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -106,6 +110,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         _liveRecordUiTimer.Tick += (_, _) => RefreshLiveRecordControls();
         SetupStationFeedbackWatcher();
         _ = AppSettings.GetDownloadDirectory();
+        ConfigureStreamProxyServer();
         UpdateResponsiveLayout();
         SetTabState();
     }
@@ -120,13 +125,30 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
 
     public LiveQueueTracker LiveQueueTracker => _liveQueueTracker;
 
+    public RadioProxyCatalog RadioProxyCatalog => _radioProxyCatalog;
+
     public void SetLiveStreamUrl(string url)
     {
         if (string.IsNullOrWhiteSpace(url) || LiveRadioRecorder.IsVodM3u8(url))
             return;
 
         _liveM3u8Url = url;
+
+        var channel = _liveQueueTracker.ActiveChannel;
+        if (channel != null && !string.IsNullOrWhiteSpace(channel.ChannelId))
+        {
+            _radioProxyCatalog.RegisterChannel(
+                channel.ChannelId,
+                channel.ChannelName,
+                channel.ChannelNumber,
+                channel.ShowName,
+                makeDefault: true);
+            _radioProxyCatalog.SetSourceUrl(channel.ChannelId, url);
+            _ = SyncRadioDrmKeyAsync(channel.ChannelId);
+        }
+
         Dispatcher.Invoke(RefreshLiveRecordControls);
+        Dispatcher.Invoke(RefreshStreamServerControls);
         Log.Information("Live radio stream URL captured: {Url}", url);
     }
 
@@ -302,6 +324,257 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
     private void RefreshSettingsPanel()
     {
         DownloadFolderTextBox.Text = AppSettings.GetDownloadDirectory();
+    }
+
+    private void RefreshLocalServerPanel()
+    {
+        if (StreamServerPortTextBox == null)
+            return;
+
+        StreamServerPortTextBox.Text = AppSettings.GetStreamServerPort().ToString();
+        RefreshStreamServerControls();
+        ProxyChannelList.ItemsSource = _radioProxyCatalog.GetAllSlots();
+        if (ProxyChannelEmptyText != null)
+        {
+            var hasChannels = _radioProxyCatalog.GetAllSlots().Count > 0;
+            ProxyChannelEmptyText.Visibility = hasChannels ? Visibility.Collapsed : Visibility.Visible;
+            ProxyChannelList.Visibility = hasChannels ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private void ConfigureStreamProxyServer()
+    {
+        _streamProxyServer.GetStreamCatalog = BuildStreamProxyCatalog;
+        _streamProxyServer.RadioCatalog = _radioProxyCatalog;
+        _radioProxyCatalog.Changed += () => Dispatcher.Invoke(() =>
+        {
+            RefreshStreamServerControls();
+            RefreshLocalServerPanel();
+        });
+    }
+
+    private IReadOnlyList<StreamProxyCatalogItem> BuildStreamProxyCatalog()
+    {
+        var items = new List<StreamProxyCatalogItem>(_streamEntries.Count);
+        for (var i = 0; i < _streamEntries.Count; i++)
+        {
+            var entry = _streamEntries[i];
+            if (!entry.CanPlay || string.IsNullOrWhiteSpace(entry.Url))
+                continue;
+
+            items.Add(new StreamProxyCatalogItem
+            {
+                Index = i,
+                StreamType = entry.StreamType,
+                TrackName = entry.TrackName,
+                ArtistName = entry.ArtistName,
+                AlbumName = entry.AlbumName,
+                ImageUrl = entry.PreferredImageUrl,
+                UpstreamUrl = entry.Url,
+                ProxyUrl = $"/s/{i}"
+            });
+        }
+
+        return items;
+    }
+
+    private async Task SyncRadioDrmKeyAsync(string channelId)
+    {
+        var key = await LiveStreamCredentials.LoadHlsKeyBytesAsync();
+        if (key == null)
+            return;
+
+        _radioProxyCatalog.SetDrmKey(channelId, key);
+        if (_streamProxyServer.IsRunning)
+            _streamProxyServer.DefaultKeyBytes = key;
+    }
+
+    private async Task ExposeRadioChannelAsync(string channelId, string? channelName, int? channelNumber)
+    {
+        var slot = _radioProxyCatalog.RegisterChannel(
+            channelId,
+            channelName ?? "Live Channel",
+            channelNumber,
+            null,
+            makeDefault: false);
+
+        if (string.IsNullOrWhiteSpace(LastTuneSourceUrl))
+        {
+            _radioProxyCatalog.SetState(channelId, RadioProxyState.Failed,
+                "Play live radio in SRXMDL first to capture tuneSource.");
+            SetStatus("Missing tuneSource URL — play a live channel first.");
+            return;
+        }
+
+        var auth = LastTuneSourceAuthToken ?? await LiveStreamCredentials.LoadBearerAsync();
+        if (string.IsNullOrWhiteSpace(auth))
+        {
+            _radioProxyCatalog.SetState(channelId, RadioProxyState.Failed,
+                "Missing authorization. Play live radio in SRXMDL first.");
+            SetStatus("Missing authorization for live tuning.");
+            return;
+        }
+
+        _radioProxyCatalog.SetState(channelId, RadioProxyState.Waiting);
+        SetStatus($"Tuning {slot.ChannelName}...");
+
+        var tuneResult = await _liveChannelTuner.TuneChannelAsync(
+            channelId,
+            LastTuneSourceUrl,
+            LastTuneSourcePayload,
+            auth);
+
+        if (tuneResult.Ok && !string.IsNullOrWhiteSpace(tuneResult.M3u8Url))
+        {
+            if (!string.IsNullOrWhiteSpace(tuneResult.ChannelName) || tuneResult.ChannelNumber.HasValue)
+            {
+                _radioProxyCatalog.RegisterChannel(
+                    channelId,
+                    tuneResult.ChannelName ?? slot.ChannelName,
+                    tuneResult.ChannelNumber ?? slot.ChannelNumber,
+                    slot.ShowName,
+                    makeDefault: false);
+            }
+
+            if (tuneResult.Details != null)
+                _radioProxyCatalog.ApplyChannelDetails(channelId, tuneResult.Details);
+
+            _radioProxyCatalog.SetSourceUrl(channelId, tuneResult.M3u8Url);
+            await SyncRadioDrmKeyAsync(channelId);
+
+            if (_streamProxyServer.IsRunning)
+            {
+                var url = $"{_streamProxyServer.BaseUrl.TrimEnd('/')}{slot.StreamPath}";
+                SetStatus($"Channel ready — copy from player or use {url}");
+            }
+            else
+            {
+                SetStatus("Channel tuned. Start the stream server to get a local URL.");
+            }
+
+            return;
+        }
+
+        _radioProxyCatalog.SetState(channelId, RadioProxyState.Failed, tuneResult.Error);
+        SetStatus($"Failed to tune channel: {tuneResult.Error}");
+    }
+
+    private void RefreshStreamServerControls()
+    {
+        if (StreamServerPortTextBox == null)
+            return;
+
+        var isRunning = _streamProxyServer.IsRunning;
+        StreamServerPortTextBox.IsEnabled = !isRunning;
+        StreamServerStartButton.Visibility = isRunning ? Visibility.Collapsed : Visibility.Visible;
+        StreamServerStopButton.Visibility = isRunning ? Visibility.Visible : Visibility.Collapsed;
+        StreamServerOpenButton.IsEnabled = isRunning;
+
+        if (isRunning)
+        {
+            var slots = _radioProxyCatalog.GetAllSlots();
+            var liveCount = slots.Count(s => s.CanStream);
+            StreamServerStatusText.Text =
+                $"Running at {_streamProxyServer.BaseUrl} — {liveCount} live channel(s), {_streamEntries.Count} capture(s). Each channel uses /radio/{{id}}/stream.m3u8.";
+            StreamServerStatusText.Foreground = (Brush)FindResource("AccentBlue");
+        }
+        else
+        {
+            StreamServerStatusText.Text =
+                "Expose live channels and captured streams on a local URL for browsers and media players.";
+            StreamServerStatusText.Foreground = (Brush)FindResource("TextMuted");
+        }
+    }
+
+    private async void StreamServerStartButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!int.TryParse(StreamServerPortTextBox.Text.Trim(), out var port) || port is <= 0 or >= 65536)
+        {
+            MessageBox.Show("Enter a valid port between 1 and 65535.", "Stream Server",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (!StreamProxyServer.IsPortAvailable(port))
+        {
+            MessageBox.Show($"Port {port} is already in use.", "Stream Server",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        AppSettings.SetStreamServerPort(port);
+        var (ok, message) = await _streamProxyServer.StartAsync(port);
+        if (!ok)
+        {
+            MessageBox.Show(message, "Stream Server", MessageBoxButton.OK, MessageBoxImage.Warning);
+            SetStatus(message);
+            return;
+        }
+
+        RefreshStreamServerControls();
+        SetStatus($"Stream server started at {message}");
+        Log.Information("Stream server started at {Url}", message);
+    }
+
+    private void StreamServerStopButton_Click(object sender, RoutedEventArgs e)
+    {
+        _streamProxyServer.Stop();
+        RefreshStreamServerControls();
+        SetStatus("Stream server stopped");
+    }
+
+    private void StreamServerOpenButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_streamProxyServer.IsRunning)
+            return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = _streamProxyServer.BaseUrl,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Could not open browser: {ex.Message}", "Stream Server",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void AddRadioProxyChannelButton_Click(object sender, RoutedEventArgs e)
+    {
+        var channelId = RadioProxyChannelIdTextBox?.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(channelId))
+        {
+            MessageBox.Show("Enter a SiriusXM channel ID (UUID).", "Add Live Channel",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        await ExposeRadioChannelAsync(channelId, null, null);
+    }
+
+    private void CopyProxyUrlButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_streamProxyServer.IsRunning)
+        {
+            MessageBox.Show("Start the stream server in Settings first.", "Copy Proxy URL",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (sender is not Button { DataContext: StreamEntry entry })
+            return;
+
+        var index = _streamEntries.IndexOf(entry);
+        if (index < 0)
+            return;
+
+        var url = $"{_streamProxyServer.BaseUrl}s/{index}";
+        Clipboard.SetText(url);
+        SetStatus($"Copied proxy URL for {entry.TrackName}");
     }
 
     private void BrowseDownloadFolderButton_Click(object sender, RoutedEventArgs e)
@@ -501,6 +774,33 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
         SetTabState();
     }
 
+    private void LocalServerTabButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activePanel == FeaturePanel.LocalServer)
+            return;
+
+        _activePanel = FeaturePanel.LocalServer;
+        SetTabState();
+        RefreshLocalServerPanel();
+    }
+
+    private void CopyLocalChannelUrlButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_streamProxyServer.IsRunning)
+        {
+            MessageBox.Show("Start the local server first.", "Copy URL",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (sender is not Button { Tag: RadioProxySlot slot })
+            return;
+
+        var url = $"{_streamProxyServer.BaseUrl.TrimEnd('/')}{slot.StreamPath}";
+        Clipboard.SetText(url);
+        SetStatus($"Copied URL for {slot.ChannelName}");
+    }
+
     private void WhatsNextTabButton_Click(object sender, RoutedEventArgs e)
     {
         if (_activePanel == FeaturePanel.WhatsNext)
@@ -619,6 +919,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
 
         StreamListView.Visibility = _activePanel == FeaturePanel.Streams ? Visibility.Visible : Visibility.Collapsed;
         WhatsNextPanel.Visibility = _activePanel == FeaturePanel.WhatsNext ? Visibility.Visible : Visibility.Collapsed;
+        LocalServerPanel.Visibility = _activePanel == FeaturePanel.LocalServer ? Visibility.Visible : Visibility.Collapsed;
         ArtistsPanel.Visibility = _activePanel == FeaturePanel.Artists ? Visibility.Visible : Visibility.Collapsed;
         LyricsPanel.Visibility = _activePanel == FeaturePanel.Lyrics ? Visibility.Visible : Visibility.Collapsed;
         ClearStreamsButton.Visibility = _activePanel == FeaturePanel.Streams ? Visibility.Visible : Visibility.Collapsed;
@@ -634,6 +935,9 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
 
         WhatsNextTabButton.Background = _activePanel == FeaturePanel.WhatsNext ? accentBlue : Brushes.Transparent;
         WhatsNextTabButton.Foreground = _activePanel == FeaturePanel.WhatsNext ? Brushes.White : textSecondary;
+
+        LocalServerTabButton.Background = _activePanel == FeaturePanel.LocalServer ? accentBlue : Brushes.Transparent;
+        LocalServerTabButton.Foreground = _activePanel == FeaturePanel.LocalServer ? Brushes.White : textSecondary;
 
         ArtistsTabButton.Background = _activePanel == FeaturePanel.Artists ? accentBlue : Brushes.Transparent;
         ArtistsTabButton.Foreground = _activePanel == FeaturePanel.Artists ? Brushes.White : textSecondary;
@@ -2178,6 +2482,8 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
             _liveRecordUiTimer.Stop();
             _liveRadioRecorder.Stop();
         }
+
+        _streamProxyServer.Dispose();
 
         if (_sessionService != null)
             await _sessionService.DisposeAsync();

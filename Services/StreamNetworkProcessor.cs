@@ -134,6 +134,7 @@ public sealed class StreamNetworkProcessor
                         break;
                     case "channel-linear":
                         ProcessChannelLinearTuneSource(jsonElement, host);
+                        await TryAssignLiveStreamFromTuneResponse(jsonElement, host);
                         await TryProcessPendingLookAroundAsync(host);
                         Log.Information("Channel Linear detected in playlist: {Id}",
                             jsonElement.TryGetProperty("id", out var idElement) ? idElement.GetString() : "unknown");
@@ -1100,6 +1101,25 @@ public sealed class StreamNetworkProcessor
         return false;
     }
 
+    private static async Task TryAssignLiveStreamFromTuneResponse(JsonElement jsonElement, IStreamCaptureHost host)
+    {
+        var channelId = host.LiveQueueTracker.ActiveChannel?.ChannelId;
+        if (string.IsNullOrWhiteSpace(channelId))
+            return;
+
+        var m3u8 = LiveChannelTuner.ExtractPrimaryM3u8(jsonElement);
+        if (string.IsNullOrWhiteSpace(m3u8))
+            return;
+
+        host.RadioProxyCatalog.SetSourceUrl(channelId, m3u8);
+        host.RadioProxyCatalog.ApplyChannelDetails(channelId, LiveChannelMetadataExtractor.FromTuneSource(jsonElement));
+        var key = await LiveStreamCredentials.LoadHlsKeyBytesAsync();
+        if (key != null)
+            host.RadioProxyCatalog.SetDrmKey(channelId, key);
+
+        Log.Information("Live feed stream URL assigned for channel {ChannelId}", channelId);
+    }
+
     private static void ProcessChannelLinearTuneSource(JsonElement jsonElement, IStreamCaptureHost host)
     {
         var channelId = GetJsonString(jsonElement, "id");
@@ -1120,6 +1140,15 @@ public sealed class StreamNetworkProcessor
 
         var showName = ResolveCurrentLiveShowName(live);
 
+        if (live.TryGetProperty("channelNumberCanonical", out var canonicalProp) &&
+            canonicalProp.TryGetInt32(out var canonicalNumber) &&
+            !channelNumber.HasValue)
+        {
+            channelNumber = canonicalNumber;
+        }
+
+        host.RadioProxyCatalog.RegisterChannel(channelId, channelName, channelNumber, showName, makeDefault: true);
+        host.RadioProxyCatalog.ApplyChannelDetails(channelId, LiveChannelMetadataExtractor.FromTuneSource(jsonElement));
         host.LiveQueueTracker.SetActiveLiveChannel(channelId, channelName, channelNumber, showName);
         host.MetadataTracker.UpdateStationName(channelName);
 
@@ -1235,6 +1264,41 @@ public sealed class StreamNetworkProcessor
             if (channelProperty.Value.ValueKind != JsonValueKind.Object)
                 continue;
 
+            var channelId = channelProperty.Name;
+            if (!host.RadioProxyCatalog.IsRegistered(channelId))
+                continue;
+
+            var (lookShowName, lookShowImage, isPlayByPlay) =
+                LiveChannelMetadataExtractor.FromLookAroundChannel(channelProperty.Value);
+            host.RadioProxyCatalog.UpdateLookAroundInfo(
+                channelId,
+                lookShowName,
+                lookShowImage,
+                isPlayByPlay);
+
+            if (!channelProperty.Value.TryGetProperty("cuts", out var cutsElement) ||
+                cutsElement.ValueKind != JsonValueKind.Array)
+                continue;
+
+            var showName = lookShowName ?? ExtractLookAroundShowName(channelProperty.Value);
+            var cuts = ParseLookAroundCuts(cutsElement);
+            var nowPlaying = cuts.Where(c => !c.IsAd).OrderByDescending(c => c.ValidFromUtc).FirstOrDefault();
+            if (nowPlaying == null)
+                continue;
+
+            host.RadioProxyCatalog.UpdateNowPlaying(
+                channelId,
+                nowPlaying.TrackName,
+                nowPlaying.ArtistName,
+                nowPlaying.ImageUrl,
+                showName);
+        }
+
+        foreach (var channelProperty in channelMap.EnumerateObject())
+        {
+            if (channelProperty.Value.ValueKind != JsonValueKind.Object)
+                continue;
+
             if (!string.Equals(channelProperty.Name, activeChannelId, StringComparison.OrdinalIgnoreCase))
                 continue;
 
@@ -1297,6 +1361,7 @@ public sealed class StreamNetworkProcessor
             if (string.IsNullOrWhiteSpace(channelId))
                 return;
 
+            host.RadioProxyCatalog.RegisterChannel(channelId, "Live Channel", null, null, makeDefault: true);
             host.LiveQueueTracker.SetActiveLiveChannel(channelId, "Live Channel", null, null);
             Log.Information("Live channel detected from tuneSource request: {ChannelId}", channelId);
         }

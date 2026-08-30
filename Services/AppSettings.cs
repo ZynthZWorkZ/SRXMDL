@@ -42,6 +42,18 @@ public static class AppSettings
         Save();
     }
 
+    public static int GetStreamServerPort() =>
+        _model.StreamServerPort is > 0 and < 65536 ? _model.StreamServerPort.Value : 8765;
+
+    public static void SetStreamServerPort(int port)
+    {
+        if (port is <= 0 or >= 65536)
+            return;
+
+        _model.StreamServerPort = port;
+        Save();
+    }
+
     private static SettingsModel Load()
     {
         try
@@ -74,5 +86,6 @@ public static class AppSettings
     private sealed class SettingsModel
     {
         public string? DownloadDirectory { get; set; }
+        public int? StreamServerPort { get; set; }
     }
 }
