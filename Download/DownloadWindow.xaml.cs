@@ -16,15 +16,17 @@ namespace SRXMDL.Download
         private string _audioUrl;
         private readonly string _trackName;
         private readonly string _artistName;
+        private readonly string? _albumName;
         private readonly string _imageUrl;
         private enum AudioFormat { Mp3, Wav, Mp4 }
 
-        public DownloadWindow(string audioUrl, string trackName, string artistName, string imageUrl)
+        public DownloadWindow(string audioUrl, string trackName, string artistName, string? albumName, string imageUrl)
         {
             InitializeComponent();
             _audioUrl = audioUrl;
             _trackName = string.IsNullOrWhiteSpace(trackName) ? "Unknown Track" : trackName;
             _artistName = string.IsNullOrWhiteSpace(artistName) ? "Unknown Artist" : artistName;
+            _albumName = string.IsNullOrWhiteSpace(albumName) ? null : albumName.Trim();
             _imageUrl = imageUrl ?? string.Empty;
             // Prefill with suggested name (optional)
             OutputFilenameTextBox.Text = BuildBaseName();
@@ -161,11 +163,22 @@ namespace SRXMDL.Download
             if (HighestSubtitle != null) HighestSubtitle.Text = maxSub;
         }
 
-        private async Task<(string command, string? tempCoverPath)> BuildFfmpegCommandAsync(AudioFormat format, string wavCodec, string mp3Bitrate, string outputFile)
+        private string BuildMetadataArgs()
         {
             var safeTitle = _trackName.Replace("\"", "'");
             var safeArtist = _artistName.Replace("\"", "'");
             var meta = $"-metadata title=\"{safeTitle}\" -metadata artist=\"{safeArtist}\"";
+            if (!string.IsNullOrWhiteSpace(_albumName))
+            {
+                var safeAlbum = _albumName.Replace("\"", "'");
+                meta += $" -metadata album=\"{safeAlbum}\"";
+            }
+            return meta;
+        }
+
+        private async Task<(string command, string? tempCoverPath)> BuildFfmpegCommandAsync(AudioFormat format, string wavCodec, string mp3Bitrate, string outputFile)
+        {
+            var meta = BuildMetadataArgs();
 
             string? tempCoverPath = null;
 
@@ -243,6 +256,7 @@ namespace SRXMDL.Download
             cmd.Append($"--extractor-args \"generic:hls_key={hlsKeyHex}\" ");
             cmd.Append("--downloader ffmpeg ");
             cmd.Append("--hls-use-mpegts ");
+            cmd.Append($"--postprocessor-args \"ffmpeg:{BuildMetadataArgs()}\" ");
             if (format == AudioFormat.Mp4)
             {
                 // Keep video; best overall; no audio extraction

@@ -1437,6 +1437,7 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
                 item.Url,
                 item.TrackName,
                 item.ArtistName,
+                item.AlbumName,
                 item.PreferredImageUrl);
             downloadWindow.Owner = this;
             downloadWindow.ShowDialog();
@@ -1452,10 +1453,12 @@ public partial class MainWindow : Window, IStreamCaptureHost, INotifyPropertyCha
                 var newTrack = string.IsNullOrWhiteSpace(_currentTrack.TrackName) ? entry.TrackName : _currentTrack.TrackName;
                 var newArtist = string.IsNullOrWhiteSpace(_currentTrack.StationName) ? entry.ArtistName : _currentTrack.StationName;
                 var newArt = string.IsNullOrWhiteSpace(_currentTrack.AlbumArtUrl) ? entry.PreferredImageUrl : _currentTrack.AlbumArtUrl;
+                var newAlbum = string.IsNullOrWhiteSpace(_currentTrack.AlbumName) ? entry.AlbumName : _currentTrack.AlbumName;
 
                 entry.TrackName = newTrack;
                 entry.ArtistName = newArtist;
                 entry.PreferredImageUrl = newArt;
+                entry.AlbumName = newAlbum;
 
                 StreamListView.Items.Refresh();
                 StatusText.Text = "Applied Now Playing metadata to selected stream.";
